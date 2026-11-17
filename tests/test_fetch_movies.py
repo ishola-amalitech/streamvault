@@ -1,9 +1,11 @@
 import os
 import unittest
+from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
+from streamvault.config import CONFIG
 from streamvault.fetch_movies import fetch_movies
 from streamvault.load import MovieId
 
@@ -27,7 +29,10 @@ class FetchMoviesTests(unittest.IsolatedAsyncioTestCase):
                 return_value=client_context,
             ),
             patch("streamvault.fetch_movies.append_removals") as append_removals,
-            patch("streamvault.fetch_movies.REQUESTS_PER_SECOND", 100.0),
+            patch(
+                "streamvault.fetch_movies.CONFIG",
+                replace(CONFIG, requests_per_second=100.0),
+            ),
         ):
             records, missing, failures = await fetch_movies(
                 [MovieId("155", 2), MovieId("165", 3)]

@@ -6,20 +6,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from itertools import chain
-from pathlib import Path
 from typing import cast
 
 import httpx
 
+from streamvault.config import CONFIG
 from streamvault.load import MovieId
 from streamvault.removals import Removal, append_removals
-
-
-BASE_URL = "https://api.themoviedb.org/3"
-MAX_CONCURRENT_REQUESTS = 8
-REQUESTS_PER_SECOND = 4.0
-MAX_RETRIES = 3
-RETRY_BASE_SECONDS = 0.5
 
 
 @dataclass(frozen=True)
@@ -73,7 +66,9 @@ def _retry_after_seconds(value: str | None) -> float | None:
 
 
 def _backoff_seconds(attempt: int) -> float:
-    return RETRY_BASE_SECONDS * (2**attempt)
+    return CONFIG.retry_base_delay_seconds * (
+        CONFIG.retry_backoff_multiplier**attempt
+    )
 
 
 async def fetch_movie(
@@ -82,16 +77,16 @@ async def fetch_movie(
     rate_limiter: RequestRateLimiter,
 ) -> dict[str, object] | FetchMissing:
     movie_id = movie.value
-    for attempt in range(MAX_RETRIES + 1):
+    for attempt in range(CONFIG.max_retries + 1):
         await rate_limiter.wait()
 
         try:
             response = await client.get(
                 f"/movie/{movie_id}",
-                params={"append_to_response": "credits"},
+                params={"append_to_response": CONFIG.append_to_response},
             )
         except httpx.RequestError:
-            if attempt == MAX_RETRIES:
+            if attempt == CONFIG.max_retries:
                 raise
             await asyncio.sleep(_backoff_seconds(attempt))
             continue
@@ -102,7 +97,7 @@ async def fetch_movie(
             )
 
         if response.status_code == 429 or response.is_server_error:
-            if attempt == MAX_RETRIES:
+            if attempt == CONFIG.max_retries:
                 response.raise_for_status()
 
             delay = _retry_after_seconds(response.headers.get("Retry-After"))
@@ -146,9 +141,9 @@ async def _fetch_movies_with_client(
     movie_ids: Iterable[MovieId],
     client: httpx.AsyncClient,
 ) -> tuple[list[dict[str, object]], list[FetchMissing], list[FetchFailure]]:
-    rate_limiter = RequestRateLimiter(REQUESTS_PER_SECOND)
+    rate_limiter = RequestRateLimiter(CONFIG.requests_per_second)
     queue: asyncio.Queue[tuple[int, MovieId] | None] = asyncio.Queue(
-        maxsize=MAX_CONCURRENT_REQUESTS * 2
+        maxsize=CONFIG.max_connections * 2
     )
     outcomes: list[
         dict[str, object] | FetchMissing | FetchFailure | None
@@ -182,14 +177,14 @@ async def _fetch_movies_with_client(
                 queue.task_done()
 
     async with asyncio.TaskGroup() as task_group:
-        for _ in range(MAX_CONCURRENT_REQUESTS):
+        for _ in range(CONFIG.max_connections):
             task_group.create_task(worker())
 
         for index, movie_id in enumerate(movie_ids):
             outcomes.append(None)
             await queue.put((index, movie_id))
 
-        for _ in range(MAX_CONCURRENT_REQUESTS):
+        for _ in range(CONFIG.max_connections):
             await queue.put(None)
 
         await queue.join()
@@ -221,10 +216,10 @@ async def fetch_movies(
 
     movie_ids = chain((first_movie_id,), movie_iterator)
 
-    read_token = os.getenv("TMDB_API_READ_ACCESS_TOKEN")
+    read_token = os.getenv(CONFIG.token_env_var)
     if not read_token:
         raise EnvironmentError(
-            "TMDB_API_READ_ACCESS_TOKEN environment variable is not set."
+            f"{CONFIG.token_env_var} environment variable is not set."
         )
 
     headers = {
@@ -232,14 +227,17 @@ async def fetch_movies(
         "accept": "application/json",
     }
     limits = httpx.Limits(
-        max_connections=MAX_CONCURRENT_REQUESTS,
-        max_keepalive_connections=MAX_CONCURRENT_REQUESTS,
+        max_connections=CONFIG.max_connections,
+        max_keepalive_connections=CONFIG.max_connections,
     )
 
     async with httpx.AsyncClient(
-        base_url=BASE_URL,
+        base_url=CONFIG.api_base_url,
         headers=headers,
-        timeout=httpx.Timeout(10.0, connect=3.05),
+        timeout=httpx.Timeout(
+            CONFIG.request_timeout_seconds,
+            connect=CONFIG.connect_timeout_seconds,
+        ),
         limits=limits,
     ) as client:
         records, missing, failures = await _fetch_movies_with_client(
@@ -247,10 +245,10 @@ async def fetch_movies(
         )
 
     append_removals(
-        Path(__file__).resolve().parents[2] / "id_list_removals.csv",
+        CONFIG.removals_file,
         (
             Removal(
-                "id_list.csv",
+                CONFIG.source_file.name,
                 item.source_line,
                 item.movie_id,
                 f"TMDB lookup: {item.reason}",

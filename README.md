@@ -8,10 +8,17 @@ Set `TMDB_API_READ_ACCESS_TOKEN`, then run:
 uv run streamvault
 ```
 
-Fetched movie responses are saved as JSONL in `data/raw/movies.jsonl`. Later
-runs use those cached responses and only request IDs that are not already
-cached. To refresh existing records, remove the cache file before running the
-command again.
+Application settings live in the root [config.toml](config.toml). It controls
+the TMDB endpoint and appended response, request concurrency/rate/timeouts,
+retry/backoff policy, and input/cache/removal-log paths. Paths are relative to
+the config file. Keep the token value in the
+environment; do not put secrets in `config.toml`. Package, build, and dependency
+settings remain in `pyproject.toml`.
+
+By default, fetched movie responses are saved as JSONL in
+`data/raw/movies.jsonl`. Later runs use those cached responses and only request
+IDs that are not already cached. To refresh existing records, remove the cache
+file before running the command again.
 
 ## Explore the dataset
 
@@ -41,3 +48,9 @@ Project decisions and the plain-language rationale are recorded in [DECISIONS.md
 Cached raw movie responses include a UTC `cached_at_utc` timestamp. Existing cache entries without timestamps are backfilled the next time `uv run streamvault` runs. The backfill time is when the existing record was timestamped, not its original fetch time.
 
 Requests have timeouts and retry temporary network, rate-limit, and server errors. A TMDB 404 is added to the local removal log and does not stop the rest of the batch.
+
+The notebook displays pass/fail data checks after loading, normalization, and
+joining, with each stage shown once above its report. A failed check remains
+visible and raises an error before later analysis continues. See
+[DECISIONS.md](DECISIONS.md) for the table definitions, check rules, and join
+rationale.

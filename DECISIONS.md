@@ -9,12 +9,13 @@ This document is the running record of the project’s important choices. It exp
 - The starting list is `id_list.csv`; each valid `tmdb_id` is requested from the TMDB movie-details endpoint, including credits.
 - The API access token is read from the `TMDB_API_READ_ACCESS_TOKEN` environment variable. It is not stored in the repository.
 - One reusable asynchronous HTTP session is used for a batch. The project allows up to eight requests in progress and schedules requests at four per second.
+- Runtime settings are centralized in the root `config.toml`: API base URL, token environment-variable name, appended response data, connection concurrency, request rate and timeouts, retry/backoff settings, and input/cache/removal paths. Paths are relative to the config file. Package, build, and dependency settings remain in `pyproject.toml`.
 
 ### Timeouts and retries
 
-- Each request has a 10-second timeout and a 3.05-second connection timeout.
-- Network/request errors, HTTP 429 rate limits, and HTTP 5xx server errors are retried up to three times after the first attempt (at most four attempts total).
-- For HTTP 429, the client honors the server’s `Retry-After` instruction when it is valid. Otherwise, and for server/network errors, it waits with exponential backoff: 0.5, 1, then 2 seconds between retries.
+- Each request has the configured total and connection timeouts (currently 10 seconds and 3.05 seconds).
+- Network/request errors, HTTP 429 rate limits, and HTTP 5xx server errors are retried according to the configured retry count (currently three retries after the first attempt, at most four attempts total).
+- For HTTP 429, the client honors the server’s `Retry-After` instruction when it is valid. Otherwise, and for server/network errors, it waits with the configured exponential backoff (currently 0.5, 1, then 2 seconds between retries).
 - A final failed request is reported for that ID and does not stop other IDs in the batch. These final request failures are printed by the command, but are not yet saved to a durable failure-history file.
 
 ### Missing IDs and saved responses
@@ -64,8 +65,68 @@ The notebook demonstrates joining `movie_genres` to `genres`, then to `movies`. 
 - **Left join:** keeps every row from the table on the left. An unmatched film or link remains in the output for investigation; an inner join could silently discard exactly that evidence.
 - **`validate="many_to_one"`:** declares that many link rows may point to one reference row, but the reference key must be unique. Pandas raises a `MergeError` if the reference side has duplicate keys that would fan out the results.
 - **`indicator=`:** adds a named match-status column. `both` means the row matched; `left_only` means the left-side ID had no matching reference; `right_only` is possible for outer joins and is not expected in these left joins. Counts are displayed so unmatched data is visible.
-- **Row-count assertion:** after each left join, the notebook asserts that the row count is unchanged. This catches accidental row multiplication even if a future join is edited incorrectly.
-- **Source-list coverage:** every physical row in `id_list.csv` (including blank and duplicate rows) is left-joined to the cache with `validate="many_to_one"` and an indicator. It is then joined to the grouped removal log by source line and original value, with `validate="one_to_one"` and another indicator. The row count is checked after both joins. A cached match, known invalid/duplicate/not-found entry, and an unmatched row without a recorded reason are distinguishable; an unexplained cache miss is not guessed to be a 404.
+- **Row-count check:** after each demonstrated left join, the check report compares the joined row count to the link count before joining. This catches accidental row multiplication even if a future join is edited incorrectly.
+- **Source-list coverage:** every physical row in `id_list.csv` (including blank and duplicate rows) is left-joined to the cache with `validate="many_to_one"` and an indicator. It is then joined to the grouped removal log by source line and original value, with `validate="one_to_one"` and another indicator. The report checks row preservation, unique source lines, and that each unmatched cache row has a logged explanation. An unexplained cache miss is not guessed to be a 404.
+
+### Automatic staged data-quality report
+
+The notebook calls `run_data_checks` from `src/streamvault/diagnostics.py` after loading, after normalization, and after joins. It returns a table with one row per check and the columns `check`, `status` (`PASS` or `FAIL`), and `details`. The calling cell displays the stage name once as a heading, then displays the report with IPython’s `display`. It calls `raise_for_failed_checks` with that stage name, which raises `ValueError` if any check failed so later analysis does not continue on a known-bad assumption.
+
+- **Loaded raw cache — 2 checks**
+  1. Every response has a movie ID.
+  2. Every `cached_at_utc` value parses as a UTC timestamp.
+
+- **Cleaned and normalized tables — 29 checks**
+  - **Row-count reconciliation — 1:** normalized movie row count equals the number of loaded responses.
+  - **Table-grain checks — 14:** one combined report row for each table below verifies that its key column(s) exist, are non-null, and uniquely identify rows. The details state which condition failed.
+
+    | Table | Key column(s) checked |
+    | --- | --- |
+    | `movies` | `movie_id` |
+    | `genres` | `genre_id` |
+    | `movie_genres` | `movie_id`, `genre_id` |
+    | `companies` | `company_id` |
+    | `movie_companies` | `movie_id`, `company_id` |
+    | `countries` | `country_code` |
+    | `movie_origin_countries` | `movie_id`, `country_code` |
+    | `movie_production_countries` | `movie_id`, `country_code` |
+    | `languages` | `language_code` |
+    | `movie_spoken_languages` | `movie_id`, `language_code` |
+    | `collections` | `collection_id` |
+    | `people` | `person_id` |
+    | `cast_credits` | `credit_id` |
+    | `crew_credits` | `credit_id` |
+
+  - **Reference checks — 14:** the two movie–genre relationships are checked by the later join indicators, so they are not repeated here. The other checks verify:
+    - `movie_companies.movie_id` → `movies.movie_id`; `movie_companies.company_id` → `companies.company_id`
+    - `movie_origin_countries.movie_id` → `movies.movie_id`; `movie_origin_countries.country_code` → `countries.country_code`
+    - `movie_production_countries.movie_id` → `movies.movie_id`; `movie_production_countries.country_code` → `countries.country_code`
+    - `movie_spoken_languages.movie_id` → `movies.movie_id`; `movie_spoken_languages.language_code` → `languages.language_code`
+    - `cast_credits.movie_id` → `movies.movie_id`; `cast_credits.person_id` → `people.person_id`
+    - `crew_credits.movie_id` → `movies.movie_id`; `crew_credits.person_id` → `people.person_id`
+    - Non-null `movies.collection_id` values → `collections.collection_id`
+    - Non-null `companies.origin_country_code` values → `countries.country_code`
+
+- **Joined tables — 6 checks:** the notebook makes two left joins for the genre example (`movie_genres` → `genres`, then → `movies`). Each join checks that its row count is preserved, that every reference matched (`indicator` value `both`), and that the movie–genre link key remains unique.
+- **Source coverage — 3 checks:** the final result after the two left joins preserves the input row count; each source line has one coverage row; and every source row without a cached movie has a logged explanation. A separate “every row has an outcome” check is omitted because the notebook assigns an outcome to every row by construction.
+
+**Total: 40 reported checks** for the current non-empty dataset: 2 loaded-cache + 29 normalized-table + 6 join + 3 source-coverage checks. The KPI-field, KPI-value, and release-year plausibility checks are intentionally deferred until after data profiling and the KPI requirements are defined. The grain checks were consolidated for readability without dropping any of their three conditions, and duplicate or tautological checks were removed.
+
+### Other fail-fast validations (outside the 48 report rows)
+
+Some checks raise an error before a report can be produced; they protect the cache and normalization process rather than appearing as report rows:
+
+- **Cache file checks:** each nonblank JSONL line must contain valid JSON; each record must be an object with string keys and a positive numeric movie ID. The cache loader stores records in a dictionary keyed by movie ID, so duplicate raw lines can be overwritten before the notebook sees them. A raw-line duplicate check is deliberately not included.
+- **Nested-data shape checks:** nested lists such as genres, companies, countries, languages, cast, and crew must contain the expected kinds of values; collection and credits fields must have the expected object shape (or allowed null value).
+- **Identifier and relationship checks:** IDs must be positive numeric values; required codes and credit IDs must be nonempty text; duplicate movie IDs, duplicate movie-to-entity links, and duplicate credit IDs are rejected.
+- **Reference consistency checks:** repeated descriptions of the same genre, company, country, language, collection, or person must not conflict. Collection details without a collection ID are rejected.
+- **Release-date parsing:** invalid dates are rejected by normalization. A plausible-year range is a separate domain assumption and is currently deferred.
+- **Join cardinality checks:** pandas `validate="many_to_one"` requires the reference side to have one row per key. Source coverage uses `validate="one_to_one"` when attaching the grouped removal log. A violation raises `MergeError` before the report runs. The join `indicator` columns provide match counts, which the report checks; the row-count assertions are retained as the lab’s explicit fan-out audit.
+- **Report-helper checks:** `run_data_checks` rejects a blank stage name or an empty set of checks. The caller displays the results; `raise_for_failed_checks` raises `ValueError` if any check fails.
+
+The report does not include a cache-nonempty check because it only runs when records exist. The normalizer already rejects non-positive movie IDs, so the report does not repeat that check.
+
+Release-year plausibility limits are not currently enforced. They can be considered after profiling the observed dates and agreeing on a business rule. The normalizer still rejects malformed date values. With an empty cache, raw and normalized checks are skipped with a message; the source-coverage stage still reports whether input IDs have cache results or logged reasons.
 
 In the current local snapshot, the genre demonstration had 320 relationship rows matched to both references (no fan-out). The source coverage had 127 input rows: 118 rows linked to cached films and 9 with no cached film—5 recorded 404s, 3 invalid values, and 1 blank row. Six duplicate input rows were separately identified in the removal log and still link to their already-cached film. These counts describe the current files and will change as the input list/cache changes.
 

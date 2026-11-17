@@ -1,17 +1,14 @@
 import asyncio
-from pathlib import Path
 
 from streamvault.cache import load_cached_records, write_cached_records
+from streamvault.config import CONFIG
 from streamvault.fetch_movies import fetch_movies
 from streamvault.load import iter_movie_ids
 
 
 async def run() -> None:
-    project_root = Path(__file__).resolve().parents[2]
-    csv_path = project_root / "id_list.csv"
-    cache_path = project_root / "data" / "raw" / "movies.jsonl"
-    movie_ids = list(iter_movie_ids(csv_path))
-    cached_records = load_cached_records(cache_path)
+    movie_ids = list(iter_movie_ids(CONFIG.source_file, CONFIG.removals_file))
+    cached_records = load_cached_records(CONFIG.cache_file)
     missing_timestamps = sum(
         not isinstance(record.get("cached_at_utc"), str)
         for record in cached_records.values()
@@ -19,7 +16,7 @@ async def run() -> None:
 
     if not movie_ids:
         if missing_timestamps:
-            write_cached_records(cache_path, cached_records.values())
+            write_cached_records(CONFIG.cache_file, cached_records.values())
             print(f"Added cache timestamps to existing records: {missing_timestamps}")
         print("No movie IDs to fetch.")
         return
@@ -33,7 +30,9 @@ async def run() -> None:
     else:
         records, missing, failures = [], [], []
     if records or missing_timestamps:
-        write_cached_records(cache_path, [*cached_records.values(), *records])
+        write_cached_records(
+            CONFIG.cache_file, [*cached_records.values(), *records]
+        )
     if missing_timestamps:
         print(f"Added cache timestamps to existing records: {missing_timestamps}")
 

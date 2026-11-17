@@ -1,0 +1,18 @@
+[api]
+base_url = "https://api.themoviedb.org/3"
+token_env_var = "TMDB_API_READ_ACCESS_TOKEN"
+append_to_response = "credits"
+max_connections = 8
+requests_per_second = 4.0
+request_timeout_seconds = 10.0
+connect_timeout_seconds = 3.05
+
+[retry]
+max_retries = 3
+base_delay_seconds = 0.5
+backoff_multiplier = 2.0
+
+[paths]
+source_file = "id_list.csv"
+cache_file = "data/raw/movies.jsonl"
+removals_file = "id_list_removals.csv"

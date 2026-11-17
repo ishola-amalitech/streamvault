@@ -3,6 +3,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from streamvault.config import CONFIG
 from streamvault.removals import Removal, append_removals
 
 
@@ -12,9 +13,15 @@ class MovieId:
     source_line: int
 
 
-def iter_movie_ids(file_path: str | Path) -> Iterator[MovieId]:
+def iter_movie_ids(
+    file_path: str | Path, removals_path: str | Path | None = None
+) -> Iterator[MovieId]:
     source_path = Path(file_path)
-    removals_path = source_path.with_name("id_list_removals.csv")
+    removal_log_path = (
+        Path(removals_path)
+        if removals_path is not None
+        else CONFIG.removals_file
+    )
     seen_ids: set[str] = set()
     removals: list[Removal] = []
 
@@ -88,4 +95,4 @@ def iter_movie_ids(file_path: str | Path) -> Iterator[MovieId]:
     except FileNotFoundError:
         print(f"Error: The file at {source_path} was not found.")
     finally:
-        append_removals(removals_path, removals)
+        append_removals(removal_log_path, removals)
