@@ -1,21 +1,36 @@
 import asyncio
 from pathlib import Path
 
+from streamvault.cache import load_cached_records, write_cached_records
 from streamvault.fetch_movies import fetch_movies
 from streamvault.load import iter_movie_ids
 
 
 async def run() -> None:
-    csv_path = Path(__file__).resolve().parents[2] / "id_list.csv"
-    records, missing, failures = await fetch_movies(iter_movie_ids(csv_path))
+    project_root = Path(__file__).resolve().parents[2]
+    csv_path = project_root / "id_list.csv"
+    cache_path = project_root / "data" / "raw" / "movies.jsonl"
+    movie_ids = list(iter_movie_ids(csv_path))
 
-    if not (records or missing or failures):
+    if not movie_ids:
         print("No movie IDs to fetch.")
         return
 
-    processed = len(records) + len(missing) + len(failures)
-    print(f"Processed movie IDs: {processed}")
-    print(f"Fetched records: {len(records)}")
+    cached_records = load_cached_records(cache_path)
+    cached_ids = set(cached_records)
+    already_cached = sum(movie.value in cached_ids for movie in movie_ids)
+    ids_to_fetch = [movie for movie in movie_ids if movie.value not in cached_ids]
+
+    if ids_to_fetch:
+        records, missing, failures = await fetch_movies(ids_to_fetch)
+    else:
+        records, missing, failures = [], [], []
+    if records:
+        write_cached_records(cache_path, [*cached_records.values(), *records])
+
+    print(f"Movie IDs in source: {len(movie_ids)}")
+    print(f"Already cached: {already_cached}")
+    print(f"New records fetched: {len(records)}")
     print(f"Missing movie IDs: {len(missing)}")
     for item in missing:
         print(f"line {item.source_line}, {item.movie_id}: {item.reason}")
