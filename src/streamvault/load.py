@@ -1,30 +1,91 @@
-import pandas as pd
+import csv
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
-def load_data(file_path: str | Path) -> pd.DataFrame:
-    """
-    Load data from a CSV file into a Pandas DataFrame.
+from streamvault.removals import Removal, append_removals
 
-    Parameters:
-    file_path (str | Path): The path to the CSV file.
 
-    Returns:
-    pd.DataFrame: A DataFrame containing the loaded data.
-    """
+@dataclass(frozen=True)
+class MovieId:
+    value: str
+    source_line: int
+
+
+def iter_movie_ids(file_path: str | Path) -> Iterator[MovieId]:
+    source_path = Path(file_path)
+    removals_path = source_path.with_name("id_list_removals.csv")
+    seen_ids: set[str] = set()
+    removals: list[Removal] = []
+
     try:
-        df = pd.read_csv(file_path, 
-                         dtype={"tmdb_id": "string"}, 
-                         na_values=["Unknown", "N/A", ""]
-                        )
-        df = df.dropna(subset=["tmdb_id"]).drop_duplicates(subset=["tmdb_id"])
+        with source_path.open(newline="", encoding="utf-8-sig") as file:
+            reader = csv.reader(file)
+            header = next(reader, None)
+            if header is None:
+                return
+            if [value.strip() for value in header] != ["tmdb_id"]:
+                raise ValueError(
+                    f"Expected a single 'tmdb_id' column in {source_path}."
+                )
 
-        assert df["tmdb_id"].notna().all(), "blank id in source file"
-        assert df["tmdb_id"].is_unique,    "duplicate ids in source file"
-        print(len(df), df["tmdb_id"].nunique())
-        return df
+            for row in reader:
+                source_line = reader.line_num
+                if not row:
+                    removals.append(
+                        Removal(
+                            source_path.name,
+                            source_line,
+                            "",
+                            "Blank row; no TMDB movie ID.",
+                        )
+                    )
+                    continue
+                if len(row) != 1:
+                    raise ValueError(
+                        f"Expected one TMDB ID at line {source_line} in {source_path}."
+                    )
+
+                movie_id = row[0].strip()
+                if not movie_id:
+                    removals.append(
+                        Removal(
+                            source_path.name,
+                            source_line,
+                            "",
+                            "Blank row; no TMDB movie ID.",
+                        )
+                    )
+                    continue
+                if (
+                    not movie_id.isascii()
+                    or not movie_id.isdecimal()
+                    or int(movie_id) <= 0
+                ):
+                    removals.append(
+                        Removal(
+                            source_path.name,
+                            source_line,
+                            movie_id,
+                            "Not a positive numeric TMDB movie ID.",
+                        )
+                    )
+                    continue
+
+                if movie_id in seen_ids:
+                    removals.append(
+                        Removal(
+                            source_path.name,
+                            source_line,
+                            movie_id,
+                            "Duplicate TMDB movie ID; skipped.",
+                        )
+                    )
+                    continue
+
+                seen_ids.add(movie_id)
+                yield MovieId(movie_id, source_line)
     except FileNotFoundError:
-        print(f"Error: The file at {file_path} was not found.")
-        return pd.DataFrame()  # Return an empty DataFrame on error
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        return pd.DataFrame()  # Return an empty DataFrame on error
+        print(f"Error: The file at {source_path} was not found.")
+    finally:
+        append_removals(removals_path, removals)

@@ -1,68 +1,261 @@
-
+import asyncio
+import math
 import os
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from itertools import chain
+from pathlib import Path
+from typing import cast
+
 import httpx
+
+from streamvault.load import MovieId
+from streamvault.removals import Removal, append_removals
 
 
 BASE_URL = "https://api.themoviedb.org/3"
+MAX_CONCURRENT_REQUESTS = 8
+REQUESTS_PER_SECOND = 4.0
+MAX_RETRIES = 3
+RETRY_BASE_SECONDS = 0.5
 
 
-def fetch_movie(
-    client: httpx.Client,
+@dataclass(frozen=True)
+class FetchFailure:
     movie_id: str
-) -> dict[str, object] | None:
+    message: str
 
-    response = client.get(f"/movie/{movie_id}")
 
-    if response.status_code == 404:
+@dataclass(frozen=True)
+class FetchMissing:
+    movie_id: str
+    source_line: int
+    reason: str
+
+
+class RequestRateLimiter:
+    def __init__(self, requests_per_second: float) -> None:
+        self._interval = 1 / requests_per_second
+        self._lock = asyncio.Lock()
+        self._next_request_at = 0.0
+
+    async def wait(self) -> None:
+        loop = asyncio.get_running_loop()
+        async with self._lock:
+            now = loop.time()
+            scheduled_at = max(now, self._next_request_at)
+            self._next_request_at = scheduled_at + self._interval
+
+        delay = scheduled_at - now
+        if delay > 0:
+            await asyncio.sleep(delay)
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if value is None:
         return None
 
-    response.raise_for_status()
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
 
-    return response.json()
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+
+    return max(0.0, delay) if math.isfinite(delay) else None
 
 
-def fetch_movies(movie_ids: list[str]) -> tuple[list[dict[str, object]], list[str]]:
-    if not movie_ids:
-        raise ValueError("movie_ids list is empty.")     
-    if "TMDB_API_READ_ACCESS_TOKEN" not in os.environ:
-        raise EnvironmentError("TMDB_API_READ_ACCESS_TOKEN environment variable is not set.")
-    read_token = os.environ["TMDB_API_READ_ACCESS_TOKEN"]
+def _backoff_seconds(attempt: int) -> float:
+    return RETRY_BASE_SECONDS * (2**attempt)
+
+
+async def fetch_movie(
+    client: httpx.AsyncClient,
+    movie: MovieId,
+    rate_limiter: RequestRateLimiter,
+) -> dict[str, object] | FetchMissing:
+    movie_id = movie.value
+    for attempt in range(MAX_RETRIES + 1):
+        await rate_limiter.wait()
+
+        try:
+            response = await client.get(
+                f"/movie/{movie_id}",
+                params={"append_to_response": "credits"},
+            )
+        except httpx.RequestError:
+            if attempt == MAX_RETRIES:
+                raise
+            await asyncio.sleep(_backoff_seconds(attempt))
+            continue
+
+        if response.status_code == 404:
+            return FetchMissing(
+                movie_id, movie.source_line, "TMDB returned HTTP 404."
+            )
+
+        if response.status_code == 429 or response.is_server_error:
+            if attempt == MAX_RETRIES:
+                response.raise_for_status()
+
+            delay = _retry_after_seconds(response.headers.get("Retry-After"))
+            await asyncio.sleep(
+                delay if delay is not None else _backoff_seconds(attempt)
+            )
+            continue
+
+        if response.status_code == 204:
+            return FetchMissing(
+                movie_id,
+                movie.source_line,
+                f"TMDB returned HTTP {response.status_code} with no data.",
+            )
+
+        response.raise_for_status()
+        if not response.content.strip():
+            return FetchMissing(
+                movie_id,
+                movie.source_line,
+                f"TMDB returned HTTP {response.status_code} with no data.",
+            )
+
+        payload: object = response.json()
+        if not payload:
+            return FetchMissing(
+                movie_id, movie.source_line, "TMDB returned an empty movie payload."
+            )
+        if not isinstance(payload, dict):
+            raise ValueError("Expected the movie response to be a JSON object.")
+
+        payload_dict = cast(dict[object, object], payload)
+        if any(not isinstance(key, str) for key in payload_dict):
+            raise ValueError("Movie response object keys must be strings.")
+        return cast(dict[str, object], payload_dict)
+
+    raise RuntimeError("Movie request retry loop exited unexpectedly.")
+
+
+async def _fetch_movies_with_client(
+    movie_ids: Iterable[MovieId],
+    client: httpx.AsyncClient,
+) -> tuple[list[dict[str, object]], list[FetchMissing], list[FetchFailure]]:
+    rate_limiter = RequestRateLimiter(REQUESTS_PER_SECOND)
+    queue: asyncio.Queue[tuple[int, MovieId] | None] = asyncio.Queue(
+        maxsize=MAX_CONCURRENT_REQUESTS * 2
+    )
+    outcomes: list[
+        dict[str, object] | FetchMissing | FetchFailure | None
+    ] = []
+
+    async def worker() -> None:
+        while True:
+            item = await queue.get()
+            try:
+                if item is None:
+                    return
+
+                index, movie = item
+                try:
+                    result = await fetch_movie(client, movie, rate_limiter)
+                    outcomes[index] = result
+                except httpx.HTTPStatusError as error:
+                    outcomes[index] = FetchFailure(
+                        movie.value,
+                        f"HTTP {error.response.status_code}: {error.response.text}",
+                    )
+                except httpx.RequestError as error:
+                    outcomes[index] = FetchFailure(
+                        movie.value, f"Network error: {error}"
+                    )
+                except ValueError as error:
+                    outcomes[index] = FetchFailure(
+                        movie.value, f"Invalid movie response: {error}"
+                    )
+            finally:
+                queue.task_done()
+
+    async with asyncio.TaskGroup() as task_group:
+        for _ in range(MAX_CONCURRENT_REQUESTS):
+            task_group.create_task(worker())
+
+        for index, movie_id in enumerate(movie_ids):
+            outcomes.append(None)
+            await queue.put((index, movie_id))
+
+        for _ in range(MAX_CONCURRENT_REQUESTS):
+            await queue.put(None)
+
+        await queue.join()
+
+    records: list[dict[str, object]] = []
+    missing: list[FetchMissing] = []
+    failures: list[FetchFailure] = []
+
+    for outcome in outcomes:
+        if isinstance(outcome, FetchMissing):
+            missing.append(outcome)
+        elif isinstance(outcome, FetchFailure):
+            failures.append(outcome)
+        elif outcome is None:
+            raise RuntimeError("A movie request did not produce a result.")
+        else:
+            records.append(outcome)
+
+    return records, missing, failures
+
+
+async def fetch_movies(
+    movie_ids: Iterable[MovieId],
+) -> tuple[list[dict[str, object]], list[FetchMissing], list[FetchFailure]]:
+    movie_iterator = iter(movie_ids)
+    first_movie_id = next(movie_iterator, None)
+    if first_movie_id is None:
+        return [], [], []
+
+    movie_ids = chain((first_movie_id,), movie_iterator)
+
+    read_token = os.getenv("TMDB_API_READ_ACCESS_TOKEN")
+    if not read_token:
+        raise EnvironmentError(
+            "TMDB_API_READ_ACCESS_TOKEN environment variable is not set."
+        )
+
     headers = {
         "Authorization": f"Bearer {read_token}",
-        "accept": "application/json"
+        "accept": "application/json",
     }
-    records: list[dict[str, object]] = []
-    missing: list[str] = []
+    limits = httpx.Limits(
+        max_connections=MAX_CONCURRENT_REQUESTS,
+        max_keepalive_connections=MAX_CONCURRENT_REQUESTS,
+    )
 
-    with httpx.Client(
+    async with httpx.AsyncClient(
         base_url=BASE_URL,
         headers=headers,
-        timeout=httpx.Timeout(10.0, connect=3.05)
+        timeout=httpx.Timeout(10.0, connect=3.05),
+        limits=limits,
     ) as client:
+        records, missing, failures = await _fetch_movies_with_client(
+            movie_ids, client
+        )
 
-        for movie_id in movie_ids:
-            try:
-                movie = fetch_movie(client, movie_id)
-
-                if movie is None:
-                    missing.append(movie_id)
-                else:
-                    records.append(movie)
-
-            except httpx.HTTPStatusError as e:
-                raise RuntimeError(f"HTTP error for {movie_id}: {e.response.status_code} - {e.response.text}") from e
-
-            except httpx.RequestError as e:
-                raise RuntimeError(f"Network error for {movie_id}: {e}") from e
-    return records, missing
-    
-
-
-if __name__ == "__main__":
-    records, missing = fetch_movies(["550", "603", "27205"])
-    print("Fetched records:")
-    for record in records:
-        print(record)
-    print("\nMissing movie IDs:")
-    for movie_id in missing:
-        print(movie_id)
+    append_removals(
+        Path(__file__).resolve().parents[2] / "id_list_removals.csv",
+        (
+            Removal(
+                "id_list.csv",
+                item.source_line,
+                item.movie_id,
+                f"TMDB lookup: {item.reason}",
+            )
+            for item in missing
+        ),
+    )
+    return records, missing, failures

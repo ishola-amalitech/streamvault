@@ -1,0 +1,11 @@
+source_file,original_source_line,removed_value,reason
+id_list.csv,30,-1,Not a positive numeric TMDB movie ID.
+id_list.csv,43,603,Duplicate TMDB movie ID; skipped.
+id_list.csv,60,278,Duplicate TMDB movie ID; skipped.
+id_list.csv,69,,Blank row; no TMDB movie ID.
+id_list.csv,90,1891,Duplicate TMDB movie ID; skipped.
+id_list.csv,91,155,Duplicate TMDB movie ID; skipped.
+id_list.csv,94,550,Duplicate TMDB movie ID; skipped.
+id_list.csv,95,tt0468569,Not a positive numeric TMDB movie ID.
+id_list.csv,102,680,Duplicate TMDB movie ID; skipped.
+id_list.csv,111,N/A,Not a positive numeric TMDB movie ID.
