@@ -17,10 +17,12 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                 return_value={"155": {"id": 155}},
             ),
             patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch,
+            patch("streamvault.main.write_cached_records") as write_cache,
         ):
             await run()
 
         fetch.assert_not_awaited()
+        write_cache.assert_called_once()
 
 
 if __name__ == "__main__":

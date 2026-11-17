@@ -1,6 +1,7 @@
 import json
 import os
 from collections.abc import Iterable
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import cast
@@ -54,8 +55,12 @@ def write_cached_records(
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 
     records_by_id: dict[str, dict[str, object]] = {}
+    cached_at_utc = datetime.now(timezone.utc).isoformat()
     for record in records:
-        records_by_id[_movie_id(record)] = record
+        cached_record = dict(record)
+        if not isinstance(cached_record.get("cached_at_utc"), str):
+            cached_record["cached_at_utc"] = cached_at_utc
+        records_by_id[_movie_id(cached_record)] = cached_record
 
     temporary_path: Path | None = None
     try:

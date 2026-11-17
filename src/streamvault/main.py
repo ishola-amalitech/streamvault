@@ -11,12 +11,19 @@ async def run() -> None:
     csv_path = project_root / "id_list.csv"
     cache_path = project_root / "data" / "raw" / "movies.jsonl"
     movie_ids = list(iter_movie_ids(csv_path))
+    cached_records = load_cached_records(cache_path)
+    missing_timestamps = sum(
+        not isinstance(record.get("cached_at_utc"), str)
+        for record in cached_records.values()
+    )
 
     if not movie_ids:
+        if missing_timestamps:
+            write_cached_records(cache_path, cached_records.values())
+            print(f"Added cache timestamps to existing records: {missing_timestamps}")
         print("No movie IDs to fetch.")
         return
 
-    cached_records = load_cached_records(cache_path)
     cached_ids = set(cached_records)
     already_cached = sum(movie.value in cached_ids for movie in movie_ids)
     ids_to_fetch = [movie for movie in movie_ids if movie.value not in cached_ids]
@@ -25,8 +32,10 @@ async def run() -> None:
         records, missing, failures = await fetch_movies(ids_to_fetch)
     else:
         records, missing, failures = [], [], []
-    if records:
+    if records or missing_timestamps:
         write_cached_records(cache_path, [*cached_records.values(), *records])
+    if missing_timestamps:
+        print(f"Added cache timestamps to existing records: {missing_timestamps}")
 
     print(f"Movie IDs in source: {len(movie_ids)}")
     print(f"Already cached: {already_cached}")

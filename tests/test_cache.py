@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from streamvault.cache import load_cached_records, write_cached_records
@@ -17,18 +18,33 @@ class CachedRecordsTests(unittest.TestCase):
                 path,
                 [
                     {"id": 155, "title": "Original"},
-                    {"id": 155, "title": "Updated", "credits": {"cast": []}},
+                    {
+                        "id": 155,
+                        "title": "Updated",
+                        "credits": {"cast": []},
+                        "cached_at_utc": "2020-01-02T03:04:05+00:00",
+                    },
                     {"id": 165, "title": "Second"},
                 ],
             )
 
+            cached = load_cached_records(path)
             self.assertEqual(
-                load_cached_records(path),
+                cached["155"],
                 {
-                    "155": {"id": 155, "title": "Updated", "credits": {"cast": []}},
-                    "165": {"id": 165, "title": "Second"},
+                    "id": 155,
+                    "title": "Updated",
+                    "credits": {"cast": []},
+                    "cached_at_utc": "2020-01-02T03:04:05+00:00",
                 },
             )
+            self.assertEqual(cached["165"]["id"], 165)
+            self.assertEqual(cached["165"]["title"], "Second")
+            timestamp_value = cached["165"].get("cached_at_utc")
+            if not isinstance(timestamp_value, str):
+                self.fail("New cache records need a UTC timestamp.")
+            timestamp = datetime.fromisoformat(timestamp_value)
+            self.assertEqual(timestamp.utcoffset(), timedelta(0))
             self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 2)
 
     def test_invalid_cached_json_reports_its_line(self) -> None:
