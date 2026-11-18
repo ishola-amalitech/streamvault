@@ -38,6 +38,7 @@ def iter_movie_ids(
 
             for row in reader:
                 source_line = reader.line_num
+                # Handle blank rows and rows with unexpected number of columns
                 if not row:
                     removals.append(
                         Removal(
@@ -52,7 +53,7 @@ def iter_movie_ids(
                     raise ValueError(
                         f"Expected one TMDB ID at line {source_line} in {source_path}."
                     )
-
+                # Validate the TMDB movie ID
                 movie_id = row[0].strip()
                 if not movie_id:
                     removals.append(
@@ -64,6 +65,7 @@ def iter_movie_ids(
                         )
                     )
                     continue
+                # Validate that the TMDB movie ID is a positive numeric string
                 if (
                     not movie_id.isascii()
                     or not movie_id.isdecimal()
@@ -78,7 +80,7 @@ def iter_movie_ids(
                         )
                     )
                     continue
-
+                # Check for duplicate TMDB movie IDs
                 if movie_id in seen_ids:
                     removals.append(
                         Removal(
