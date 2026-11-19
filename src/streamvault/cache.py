@@ -1,14 +1,17 @@
+"""Read and save the raw TMDB responses, one JSON object per line."""
+
 import json
-import os
 from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import cast
+
+from streamvault.run_record import write_text_atomic
 
 
 def _movie_id(record: dict[str, object]) -> str:
     value = record.get("id")
+    # JSON true and false are not movie IDs, even though Python treats them as integers.
     if isinstance(value, bool) or not isinstance(value, (int, str)):
         raise ValueError("Cached movie records must have a numeric 'id'.")
 
@@ -21,24 +24,26 @@ def _movie_id(record: dict[str, object]) -> str:
 def iter_cached_records(path: str | Path) -> Iterator[tuple[str, dict[str, object]]]:
     """Read each cache entry so a caller can check for repeated IDs."""
     cache_path = Path(path)
-    if not cache_path.exists():
+    try:
+        cache_file = cache_path.open(encoding="utf-8")
+    except FileNotFoundError:
+        # A fresh run starts with an empty cache.
         return
 
-    with cache_path.open(encoding="utf-8") as cache_file:
+    with cache_file:
         for line_number, line in enumerate(cache_file, start=1):
             if not line.strip():
                 continue
             try:
-                record = json.loads(line)
+                record: object = json.loads(line)
             except json.JSONDecodeError as error:
                 raise ValueError(
                     f"Invalid JSON in {cache_path} at line {line_number}: "
                     f"{error.msg}"
                 ) from error
 
-            if not isinstance(record, dict) or not all(
-                isinstance(key, str) for key in record
-            ):
+            # JSON object keys are already strings.
+            if not isinstance(record, dict):
                 raise ValueError(
                     f"Expected a JSON object in {cache_path} at line {line_number}."
                 )
@@ -55,36 +60,16 @@ def load_cached_records(path: str | Path) -> dict[str, dict[str, object]]:
 def write_cached_records(
     path: str | Path, records: Iterable[dict[str, object]]
 ) -> None:
-    cache_path = Path(path)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-
+    """Save one record per movie ID, keeping the last copy of each."""
     records_by_id: dict[str, dict[str, object]] = {}
     cached_at_utc = datetime.now(timezone.utc).isoformat()
     for record in records:
+        # Preserve existing timestamps and leave the caller's records untouched.
         cached_record = dict(record)
         if not isinstance(cached_record.get("cached_at_utc"), str):
             cached_record["cached_at_utc"] = cached_at_utc
         records_by_id[_movie_id(cached_record)] = cached_record
 
-    temporary_path: Path | None = None
-    try:
-        with NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=cache_path.parent,
-            prefix=f".{cache_path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            for record in records_by_id.values():
-                temporary_file.write(json.dumps(record, ensure_ascii=False))
-                temporary_file.write("\n")
-
-        if temporary_path is None:
-            raise RuntimeError("The temporary cache file was not created.")
-        # Replace the cache only after the new file has been fully written.
-        os.replace(temporary_path, cache_path)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+    # Write one JSON line at a time so we don't build a second copy of the whole cache.
+    lines = (json.dumps(record, ensure_ascii=False) + "\n" for record in records_by_id.values())
+    write_text_atomic(Path(path), lines)

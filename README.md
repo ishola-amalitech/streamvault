@@ -1,107 +1,64 @@
 # StreamVault
 
-StreamVault is a data-analysis lab for a fictional $14M film licensing decision. It compares franchise bundles with standalone films, ranks targets for each, and looks for useful director and cast signals. The analysis runs twice, once for all release years and once for films released on or after 1 January 2000. The recommendation analysis is in place. The one-page memo and deal note are pending. [Lab brief, available in the local lab files](data/lab_brief.md)
+StreamVault is a lab about a fictional $14M film licensing decision. The pipeline gathers the movie data used to compare franchise bundles with standalone films. The analysis considers all release years and a second window starting on 1 January 2000. [Lab brief, supplied separately](data/lab_brief.md)
 
-## Start here
+## The pipeline
 
-The project starts with [the candidate list](id_list.csv). It contains TMDB movie IDs. The `streamvault` command reads that list and downloads movie details and credits into a local cache. The notebooks read the cache, turn the data into tables, and explain the results.
+**Start in `src/streamvault/main.py`.** The `streamvault` command runs this file, which coordinates the steps below. Today the pipeline automates acquisition, from reading the candidate list through saving the TMDB responses. [Pipeline entry point](src/streamvault/main.py)
 
-```text
-id_list.csv → streamvault → local movie cache → Notebook 04 → rankings and reports
-                                   └──────────→ Notebooks 01–03 → data checks and exploration
+| Step | What happens | Code |
+| --- | --- | --- |
+| Read the candidate list | Read one TMDB ID per row from `id_list.csv`. Keep the first valid entry for each ID and log blank, invalid, and duplicate rows. | [load.py](src/streamvault/load.py), [removals.py](src/streamvault/removals.py) |
+| Check the cache | Reuse saved movies and pass only the missing IDs to the downloader. | [cache.py](src/streamvault/cache.py) |
+| Fetch the missing movies | Request movie details and credits from TMDB, limit how fast requests start, and retry temporary failures. Log lookup misses with their source rows. | [fetch_movies.py](src/streamvault/fetch_movies.py) |
+| Save and report | Add successful responses to the local cache. Record the fetch time and unresolved IDs when the pipeline makes requests, then print a summary. | [cache.py](src/streamvault/cache.py), [run_record.py](src/streamvault/run_record.py) |
+
+The [candidate list](id_list.csv) is included in the checkout. [config.toml](config.toml) sets the file paths, request limits, timeouts, and retry settings.
+
+## Run the pipeline
+
+Run the commands from the repository root. For a fresh download, get a TMDB API **read access token** and put it in a local `.env` file. Replace the placeholder with your token. Git and the Docker build ignore this file.
+
+```dotenv
+TMDB_API_READ_ACCESS_TOKEN=your_read_access_token
 ```
 
-## Option A: Set up with Docker
+### Docker
 
-Install Docker and start it. Run the commands below from the repository root in a Bash shell. The image installs Python 3.14, uv, and the locked dependencies, including JupyterLab. Docker is the only tool you need to install for this route. [Dockerfile](Dockerfile)
+Start Docker and run the following in Bash. The image installs Python 3.14, uv, and the locked dependencies. The pipeline writes its outputs to your checkout through the mounted folder. [Dockerfile](Dockerfile)
 
-1. Build the image.
+```sh
+docker build -t streamvault .
+docker run --rm --user "$(id -u):$(id -g)" \
+  --mount "type=bind,source=$PWD,target=/app" \
+  --env-file .env streamvault streamvault
+```
 
-   ```sh
-   docker build -t streamvault .
-   ```
+In the second command, the first `streamvault` names the image and the second runs the pipeline inside it. Rebuild the image when the dependencies or Dockerfile change.
 
-2. For a fresh download, get a TMDB API **read access token** and create a local `.env` file in the repository root. Replace the placeholder with your token. Git and the Docker build ignore this file.
+### Local uv
 
-   ```dotenv
-   TMDB_API_READ_ACCESS_TOKEN=your_read_access_token
-   ```
-
-   Download the candidate data. Docker runs the command with your user ID and saves the results in your checkout. If you already have a snapshot for this list, restore its cache and logs to the paths below and skip this step.
-
-   ```sh
-   docker run --rm --user "$(id -u):$(id -g)" \
-     --mount "type=bind,source=$PWD,target=/app" \
-     --env-file .env streamvault streamvault
-   ```
-
-3. Start JupyterLab. Open the link printed in the terminal that starts with `http://127.0.0.1:8888` and includes the Jupyter token. Press **Ctrl+C** in the terminal when you are done. The mounted checkout keeps your notebook changes and reports.
-
-   ```sh
-   docker run --rm -it --user "$(id -u):$(id -g)" \
-     --mount "type=bind,source=$PWD,target=/app" \
-     --publish 127.0.0.1:8888:8888 streamvault
-   ```
-
-   Open [Notebook 04](notebooks/04_recommendation.ipynb) and choose **Run All** in a fresh kernel. Notebooks 01–03 can also be run separately in fresh kernels.
-
-Rebuild the image when the Python dependencies or Dockerfile change. In the Docker commands, the first `streamvault` names the image. In step 2, the second `streamvault` is the download command.
-
-## Option B: Set up with local uv
-
-If you prefer to run directly on your laptop, install [uv](https://docs.astral.sh/uv/) and run these commands from the repository root. Use the same `.env` file for the download. Skip the download if you have restored a saved snapshot.
+Install [uv](https://docs.astral.sh/uv/) and run the same pipeline directly on your laptop.
 
 ```sh
 uv python install 3.14
 uv sync --locked
 uv run --locked --env-file .env streamvault
-uv run --locked jupyter lab
 ```
 
-The download needs internet access and reuses IDs already in the cache. JupyterLab reads the local cache and logs without a TMDB token.
+### Pipeline outputs
 
-### Notebook guide
-
-| Notebook | What it does |
+| Default path | What to look for |
 | --- | --- |
-| [01 · Prepare the data](notebooks/01_prep_movie_data.ipynb) | Turns the raw responses into tables, checks that joining tables keeps each film once, and accounts for source rows. |
-| [02 · Profile the data](notebooks/02_profile_movie_data.ipynb) | Checks for missing values, duplicates, unusual values, and types that need attention. |
-| [03 · Explore the data](notebooks/03_eda_movie_data.ipynb) | Explores patterns in ratings, box office, genres, franchises, and talent. |
-| [04 · Make the recommendation](notebooks/04_recommendation.ipynb) | Checks the current list, ranks both types of titles in both release windows, compares the results, reviews talent signals, and tests how the ranking responds to different scoring choices. |
+| `data/raw/movies.jsonl` | Raw movie details and credits, one movie per line. |
+| `id_list_removals.csv` | Source line and reason for each logged blank, invalid ID, duplicate ID, or TMDB lookup miss. |
+| `data/raw/movies.acquisition.json` | The latest fetch timing and counts, plus the last known outcome for each unresolved ID. |
 
-Each notebook reads the local inputs directly. Notebook 04 can run on its own once the inputs are ready. It filters the cache to IDs in the current candidate list. Use a separate cache and removal log for a different candidate list when running Notebooks 01–03, which read the whole cache.
+A repeat run reuses saved entries and tries uncached IDs again. Git ignores the cache and logs. Keep them together with the candidate CSV to reproduce a snapshot. To start a new snapshot, archive the existing cache and logs and use fresh output paths.
 
-### Inputs and outputs
+## Test the pipeline
 
-The paths below use the defaults in [config.toml](config.toml). A clean clone includes the candidate list. Supply the local lab brief separately if you need to read it. The download creates the cache and logs as needed.
-
-| Path | What it contains |
-| --- | --- |
-| `data/raw/movies.jsonl` | Raw TMDB movie details and credits, one movie per line. |
-| `id_list_removals.csv` | Log of blank, invalid, duplicate, and missing entries. |
-| `data/raw/movies.acquisition.json` | Latest download timing and unresolved lookups by ID. Created when the download command makes requests. |
-| `data/raw/movies.recommendation/` | Four ranked candidate CSVs and `run.json`, which records which inputs, code, settings, and timings produced the results. The timing script adds `benchmark.json`. |
-| [docs/recommendation_exclusions.md](docs/recommendation_exclusions.md) | Notebook 04 updates this report with source rows left out and films that missed either shortlist. |
-
-Git ignores `data/` and `id_list_removals.csv`. To repeat the same analysis, keep the input CSV, cache, and available logs together. For a fresh snapshot, archive the old cache and logs, then run the download with fresh paths or move the archived files out of the configured paths first.
-
-## How the code is organized
-
-| Path | Role |
-| --- | --- |
-| [src/streamvault/](src/streamvault/) | The Python package. It contains the download entry point and reusable code shared by the command, notebooks, and tests. |
-| [notebooks/](notebooks/) | The walkthroughs, charts, and analysis. Most of the ranking and recommendation rules live in Notebook 04 today. |
-| [scripts/](scripts/) | Commands for project maintenance. The benchmark here measures runtime using the current cache and 500 test titles. |
-| [tests/](tests/) | Automated tests for the Python package. |
-| [docs/](docs/) | The [findings](docs/findings.md), [questions](docs/questions.md), [decision notes](docs/DECISIONS.md), and exclusions report. |
-| `data/` | Local lab brief, raw downloads, and generated tables and run records. |
-| [config.toml](config.toml), [pyproject.toml](pyproject.toml), [uv.lock](uv.lock) | Settings for data paths and TMDB requests, the Python package and command, and the exact dependency versions. |
-
-Inside the package, [main.py](src/streamvault/main.py) is where the download command starts. It uses [load.py](src/streamvault/load.py) to read candidate IDs, [fetch_movies.py](src/streamvault/fetch_movies.py) to call TMDB, [cache.py](src/streamvault/cache.py) to read and save responses, and [removals.py](src/streamvault/removals.py) to log removals. [config.py](src/streamvault/config.py) reads the settings. [normalize.py](src/streamvault/normalize.py) turns raw responses into tables for the notebooks. [diagnostics.py](src/streamvault/diagnostics.py) runs checks supplied by its callers and reports or raises failures. [run_record.py](src/streamvault/run_record.py) helps the command, Notebook 04, and the benchmark keep track of their inputs and results.
-
-## Run tests and check speed
-
-Run the package tests from the repository root. With Docker, run the following command.
+The tests cover candidate IDs, the cache, the removal log, and fetch outcomes. They use simulated TMDB responses and run without an API token.
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" \
@@ -109,16 +66,31 @@ docker run --rm --user "$(id -u):$(id -g)" \
   streamvault python -m unittest discover -s tests
 ```
 
-With local uv, run the following command.
+With local uv, run `uv run --locked python -m unittest discover -s tests`.
+
+## How the notebooks informed the work
+
+The notebooks show the checks and experiments behind the pipeline design and the recommendation. The next step for automation is to bring the proven preparation, checks, and recommendation steps into the pipeline.
+
+| Notebook | What it contributed |
+| --- | --- |
+| [01 · Prepare the data](notebooks/01_prep_movie_data.ipynb) | Shows how to turn nested TMDB responses into usable tables, check joins, and account for source rows. |
+| [02 · Profile the data](notebooks/02_profile_movie_data.ipynb) | Finds missing values, duplicates, unusual values, and columns that need cleaning. |
+| [03 · Explore the data](notebooks/03_eda_movie_data.ipynb) | Explores patterns in ratings, box office, genres, franchises, and talent. |
+| [04 · Make the recommendation](notebooks/04_recommendation.ipynb) | Compares bundles and standalones, ranks targets in both release windows, and tests how sensitive the results are to changes in scoring. |
+
+The notebooks already share code for turning raw responses into tables and running data checks. [normalize.py](src/streamvault/normalize.py) · [diagnostics.py](src/streamvault/diagnostics.py)
+
+The notebooks use the pipeline's saved data. For a fresh analysis, open Notebook 04 in a fresh kernel and choose **Run All**. It writes the ranked CSVs and analysis run record under `data/raw/movies.recommendation/` and updates the [exclusions report](docs/recommendation_exclusions.md). The one-page memo and deal note are pending.
+
+To open JupyterLab with Docker, use the image built above and open the link printed in the terminal. With local uv, run `uv run --locked jupyter lab`.
 
 ```sh
-uv run --locked python -m unittest discover -s tests
+docker run --rm -it --user "$(id -u):$(id -g)" \
+  --mount "type=bind,source=$PWD,target=/app" \
+  --publish 127.0.0.1:8888:8888 streamvault
 ```
 
-With a populated cache, run the timing script from the repository root. Use `python scripts/benchmark_recommendation.py` as the command in the Docker test example, or run it with local uv.
+The [benchmark script](scripts/benchmark_recommendation.py) measures the current notebook analysis against the cached snapshot and 500 test titles, with TMDB requests and test-data setup outside the timer. With a populated cache, run `uv run --locked python scripts/benchmark_recommendation.py`, or use `python scripts/benchmark_recommendation.py` in the Docker test command above.
 
-```sh
-uv run --locked python scripts/benchmark_recommendation.py
-```
-
-It runs the cached recommendation in fresh Python processes for the current snapshot and for 500 test titles. The timer starts with the first code cell and ends after the candidate tables and file fingerprints are ready. TMDB requests and test-data setup happen outside that window. Run Notebook 04 again to see the timing comparison for matching inputs and code.
+See the [findings](docs/findings.md), [questions](docs/questions.md), and [decision notes](docs/DECISIONS.md) for the evidence and choices behind the work.

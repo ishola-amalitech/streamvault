@@ -36,6 +36,7 @@ class RequestRateLimiter:
 
     async def wait(self) -> None:
         loop = asyncio.get_running_loop()
+        # Reserve one start time per request, then let other workers reserve theirs.
         async with self._lock:
             now = loop.time()
             scheduled_at = max(now, self._next_request_at)
@@ -76,6 +77,7 @@ async def fetch_movie(
     movie: MovieId,
     rate_limiter: RequestRateLimiter,
 ) -> dict[str, object] | FetchMissing:
+    """Request one title and retry temporary failures."""
     movie_id = movie.value
     for attempt in range(CONFIG.max_retries + 1):
         await rate_limiter.wait()
@@ -100,21 +102,15 @@ async def fetch_movie(
             if attempt == CONFIG.max_retries:
                 response.raise_for_status()
 
+            # Use TMDB's requested wait when it supplies one.
             delay = _retry_after_seconds(response.headers.get("Retry-After"))
             await asyncio.sleep(
                 delay if delay is not None else _backoff_seconds(attempt)
             )
             continue
 
-        if response.status_code == 204:
-            return FetchMissing(
-                movie_id,
-                movie.source_line,
-                f"TMDB returned HTTP {response.status_code} with no data.",
-            )
-
         response.raise_for_status()
-        if not response.content.strip():
+        if response.status_code == 204 or not response.content.strip():
             return FetchMissing(
                 movie_id,
                 movie.source_line,
@@ -142,6 +138,7 @@ async def _fetch_movies_with_client(
     client: httpx.AsyncClient,
 ) -> tuple[list[dict[str, object]], list[FetchMissing], list[FetchFailure]]:
     rate_limiter = RequestRateLimiter(CONFIG.requests_per_second)
+    # Limit how many requests are queued while the workers are busy.
     queue: asyncio.Queue[tuple[int, MovieId] | None] = asyncio.Queue(
         maxsize=CONFIG.max_connections * 2
     )
@@ -152,29 +149,25 @@ async def _fetch_movies_with_client(
     async def worker() -> None:
         while True:
             item = await queue.get()
-            try:
-                if item is None:
-                    return
+            if item is None:
+                return
 
-                index, movie = item
-                try:
-                    result = await fetch_movie(client, movie, rate_limiter)
-                    outcomes[index] = result
-                except httpx.HTTPStatusError as error:
-                    outcomes[index] = FetchFailure(
-                        movie.value,
-                        f"HTTP {error.response.status_code}",
-                    )
-                except httpx.RequestError as error:
-                    outcomes[index] = FetchFailure(
-                        movie.value, f"Network error ({type(error).__name__})"
-                    )
-                except ValueError as error:
-                    outcomes[index] = FetchFailure(
-                        movie.value, f"Invalid movie response: {error}"
-                    )
-            finally:
-                queue.task_done()
+            # Use the input position so the output order stays stable.
+            index, movie = item
+            try:
+                outcomes[index] = await fetch_movie(client, movie, rate_limiter)
+            except httpx.HTTPStatusError as error:
+                outcomes[index] = FetchFailure(
+                    movie.value, f"HTTP {error.response.status_code}"
+                )
+            except httpx.RequestError as error:
+                outcomes[index] = FetchFailure(
+                    movie.value, f"Network error ({type(error).__name__})"
+                )
+            except ValueError as error:
+                outcomes[index] = FetchFailure(
+                    movie.value, f"Invalid movie response: {error}"
+                )
 
     async with asyncio.TaskGroup() as task_group:
         for _ in range(CONFIG.max_connections):
@@ -184,10 +177,9 @@ async def _fetch_movies_with_client(
             outcomes.append(None)
             await queue.put((index, movie_id))
 
+        # One stop message per worker. The task group waits for them all to finish.
         for _ in range(CONFIG.max_connections):
             await queue.put(None)
-
-        await queue.join()
 
     records: list[dict[str, object]] = []
     missing: list[FetchMissing] = []
@@ -209,6 +201,8 @@ async def _fetch_movies_with_client(
 async def fetch_movies(
     movie_ids: Iterable[MovieId],
 ) -> tuple[list[dict[str, object]], list[FetchMissing], list[FetchFailure]]:
+    """Fetch a batch and return movies, lookup misses, and request failures."""
+    # Check for an empty input without consuming the whole iterable.
     movie_iterator = iter(movie_ids)
     first_movie_id = next(movie_iterator, None)
     if first_movie_id is None:
@@ -231,6 +225,7 @@ async def fetch_movies(
         max_keepalive_connections=CONFIG.max_connections,
     )
 
+    # All workers share one client so they can reuse connections.
     async with httpx.AsyncClient(
         base_url=CONFIG.api_base_url,
         headers=headers,
@@ -244,6 +239,7 @@ async def fetch_movies(
             movie_ids, client
         )
 
+    # Log lookup misses in the CSV. The caller tracks request failures separately.
     append_removals(
         CONFIG.removals_file,
         (

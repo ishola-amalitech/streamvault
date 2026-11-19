@@ -203,6 +203,25 @@ class NormalizeMovieRecordsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate credit ID"):
             normalize_movie_records([first, second])
 
+    def test_credit_row_uses_the_trimmed_id(self) -> None:
+        record = {
+            "id": 155,
+            "credits": {"cast": [{"id": 5, "credit_id": " cast-155 "}]},
+        }
+
+        tables = normalize_movie_records([record])
+
+        self.assertEqual(tables.cast_credits["credit_id"].tolist(), ["cast-155"])
+
+    def test_credits_can_be_missing_but_must_be_an_object_when_supplied(self) -> None:
+        tables = normalize_movie_records([{"id": 155}, {"id": 165, "credits": None}])
+
+        self.assertTrue(tables.cast_credits.empty)
+        self.assertTrue(tables.crew_credits.empty)
+        self.assertTrue(tables.people.empty)
+        with self.assertRaisesRegex(ValueError, "Movie 155: expected 'credits' to be an object"):
+            normalize_movie_records([{"id": 155, "credits": []}])
+
     def test_duplicate_movie_ids_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "Duplicate movie ID 155"):
             duplicate = movie_record(155, 1.2, "2020-01-02")
