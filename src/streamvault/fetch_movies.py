@@ -163,11 +163,11 @@ async def _fetch_movies_with_client(
                 except httpx.HTTPStatusError as error:
                     outcomes[index] = FetchFailure(
                         movie.value,
-                        f"HTTP {error.response.status_code}: {error.response.text}",
+                        f"HTTP {error.response.status_code}",
                     )
                 except httpx.RequestError as error:
                     outcomes[index] = FetchFailure(
-                        movie.value, f"Network error: {error}"
+                        movie.value, f"Network error ({type(error).__name__})"
                     )
                 except ValueError as error:
                     outcomes[index] = FetchFailure(
