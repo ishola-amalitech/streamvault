@@ -25,7 +25,7 @@ Later fetches reuse cached IDs. To refresh them, archive the current cache, then
 | [01 Prep](notebooks/01_prep_movie_data.ipynb) | Normalize responses, validate keys and joins, and reconcile each source row. | Runs against the local cache and removal log. |
 | [02 Profile](notebooks/02_profile_movie_data.ipynb) | Profile schema, duplicates, missingness, value ranges, and candidate data types. | Complete for the current snapshot. |
 | [03 EDA](notebooks/03_eda_movie_data.ipynb) | Explore numeric, genre, collection, and talent patterns and review plausible extremes. | Complete for the current snapshot. |
-| [04 Recommendation](notebooks/04_recommendation.ipynb) | Apply a fixed ranking method to both windows and produce shortlists and a deal note. | Candidate audit, scoring, and both shortlists implemented. The group comparison and memo follow. |
+| [04 Recommendation](notebooks/04_recommendation.ipynb) | Apply a fixed ranking method to both windows and produce shortlists and a deal note. | Candidate audit, scoring, both shortlists, and the group comparison are complete for this snapshot. Talent analysis and the memo follow. |
 
 Run each analysis notebook from the top in its own kernel. The first three notebooks load their respective inputs directly from the configured local paths. The current snapshot reconciles **127 list rows to 112 distinct cached titles**, with 71 titles from 2000 onward. [Findings log](docs/findings.md)
 

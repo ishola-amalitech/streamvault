@@ -41,7 +41,7 @@ Benchmark downcasts and categories on a copy. The experiment reduced movie-frame
 
 ## Chosen methods for the recommendation plan
 
-Notebook 04 scopes candidates, checks the two release windows, and scores and shortlists films and bundles. Sensitivity cases are documented for later implementation. [Recommendation notebook](../notebooks/04_recommendation.ipynb)
+Notebook 04 scopes candidates, checks the two release windows, scores and shortlists films and bundles, and compares the full eligible groups. The best-film omission check is complete. The vote threshold, score anchor, and reach-first checks follow. [Recommendation notebook](../notebooks/04_recommendation.ipynb)
 
 ### D05 · Bound the conclusion to the list and the two release windows
 
@@ -60,6 +60,8 @@ Step 2 applies those rules in both windows and fills all shortlist spots in this
 TMDB collection membership supplies the hypothetical package. Allow one or more observed, dated, released films in the window and require usable rating evidence for each. The original two-film minimum excluded collections whose other installments fell outside the list or the release window. Removing it gives those collections a rank based on the available evidence. Label one-film scores so Kwame can see when the rest of the package still needs evidence. List the included installments and describe the gap between the list and the full package. A title without a collection ID is a standalone proxy. The lab comparison uses the observed list and its metadata.
 
 Compare one median score per eligible collection with one score per standalone. Require at least five units per side and a descriptive 95% bootstrap interval beyond a 0.25 rating-point margin to favor either type. This margin is a judgment about how large a gap should be to drive a preference. Show the gap, the interval, and per-film comparisons so the reader can see how the rule affects the answer. Film weighting would give larger series extra influence. Summed gross grows with bundle size, so show it only alongside the typical film and remove the highest-scoring installment in a sensitivity run to expose reliance on the strongest entry. [Recommendation notebook](../notebooks/04_recommendation.ipynb)
+
+Step 3 applies the same rules to both windows. Sort numeric IDs and use seed 42 for 2,000 resamples within each group. The range uses the 2.5th and 97.5th percentiles of the gaps. For the omission check, remove the highest adjusted rating from each originally eligible bundle. Break film-score ties by lowest movie ID. Keep one-film bundles and drop empty bundles after removal. This rerun tests both the change in bundle scores and the loss of one-film bundles. Gross totals and per-film gross medians use positive reported gross even when budget is missing. Gross less budget uses films with both positive amounts. The ratings favor standalones in both windows before and after the omission. [Recommendation notebook](../notebooks/04_recommendation.ipynb)
 
 ### D08 · Base talent evidence on identities, roles and cross-group repetition
 
