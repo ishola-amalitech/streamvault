@@ -1,3 +1,5 @@
+import csv
+import json
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -74,11 +76,53 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch,
             patch("streamvault.main.write_cached_records") as write_cache,
+            patch("streamvault.main.write_text_atomic"),
         ):
             await run()
 
         fetch.assert_not_awaited()
         write_cache.assert_called_once()
+
+    async def test_pipeline_reports_film_issues_and_continues(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = replace(
+                CONFIG, source_file=root / "titles.csv", cache_file=root / "movies.jsonl",
+                removals_file=root / "removals.csv",
+            )
+            config.source_file.write_text("tmdb_id\n1\n2\n3\n4\n5\n", encoding="utf-8")
+            released = {"status": "Released", "release_date": "2000-01-01"}
+            records = [
+                {"id": 1, **released, "title": "Same Film", "vote_count": 800, "budget": 1, "revenue": 1},
+                {"id": 2, **released, "title": "same  film", "vote_average": 7.5, "vote_count": 1.5, "revenue": 1},
+                {"id": 3, **released, "vote_average": 7.5, "vote_count": 800, "budget": 1, "revenue": 1},
+                {"id": 4, "status": "In Production", "release_date": "2030-01-01"},
+                {"id": 5, "status": "Released"},
+            ]
+            config.cache_file.write_text(
+                "".join(
+                    json.dumps(record | {"cached_at_utc": "2026-01-01T00:00:00Z"}) + "\n"
+                    for record in records
+                ),
+                encoding="utf-8",
+            )
+            with patch("streamvault.main.CONFIG", config):
+                await run()
+
+            with config.cache_file.with_suffix(".quality.csv").open(newline="", encoding="utf-8") as report:
+                issues = {(row["movie_id"], row["issue"]) for row in csv.DictReader(report)}
+            self.assertEqual(issues, {
+                ("1", "Missing rating"),
+                ("1", "Possible duplicate film"),
+                ("2", "Invalid vote count"),
+                ("2", "Missing production budget"),
+                ("2", "Possible duplicate film"),
+                ("4", "Missing production budget"),
+                ("4", "Missing box office gross"),
+                ("5", "Missing release date"),
+                ("5", "Missing production budget"),
+                ("5", "Missing box office gross"),
+            })
 
     async def test_acquisition_record_follows_the_latest_outcome(self) -> None:
         with TemporaryDirectory() as directory:

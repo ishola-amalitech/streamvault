@@ -12,7 +12,7 @@ StreamVault is a lab about a fictional $14M film licensing decision. The pipelin
 | Check the cache | Stop if a current candidate has duplicate cache entries. Reuse saved movies and pass only the missing IDs to the downloader. | [cache.py](src/streamvault/cache.py) |
 | Fetch the missing movies | Request movie details and credits from TMDB, limit request speed, and retry temporary failures. Report whether every requested ID has one outcome before saving new responses. | [fetch_movies.py](src/streamvault/fetch_movies.py) |
 | Save and report | Add successful responses to the local cache. Record the fetch time and unresolved IDs when the pipeline makes requests, then print a summary. | [cache.py](src/streamvault/cache.py), [run_record.py](src/streamvault/run_record.py) |
-| Normalize and validate | Build the tables in memory, check that each resolved candidate appears once, and verify the collection join and links used for genre and talent analysis. Print the results and stop if a check fails. | [normalize.py](src/streamvault/normalize.py), [diagnostics.py](src/streamvault/diagnostics.py) |
+| Normalize and validate | Build the tables in memory. Check candidate IDs, collection joins, and genre and talent links. Stop on structural failures. Save film-level review issues beside the cache. | [normalize.py](src/streamvault/normalize.py), [diagnostics.py](src/streamvault/diagnostics.py) |
 
 The [candidate list](id_list.csv) is included in the checkout. [config.toml](config.toml) sets the file paths, request limits, timeouts, and retry settings.
 
@@ -54,12 +54,21 @@ uv run --locked --env-file .env streamvault
 | `data/raw/movies.jsonl` | Raw movie details and credits, one movie per line. |
 | `id_list_removals.csv` | Source line and reason for each logged blank, invalid ID, duplicate ID, or TMDB lookup miss. |
 | `data/raw/movies.acquisition.json` | The latest fetch timing and counts, plus the last known outcome for each unresolved ID. |
+| `data/raw/movies.quality.csv` | Affected movie IDs, film titles, release years when available, and the effect of each issue. A report with only column headers means no films were flagged. |
 
 A repeat run reuses saved entries and tries uncached IDs again. Git ignores the cache and logs. Keep them together with the candidate CSV to reproduce a snapshot. To start a new snapshot, archive the existing cache and logs and use fresh output paths.
 
+### Review the evidence before using the shortlists
+
+After running Notebook 04, open the sections **Film data issues to review** and **Evidence left for Adjoa**. The first lists individual film issues. The second shows how many bundles and standalones qualify in each release window and how many shortlist spots are unfilled. [Exclusions report](docs/recommendation_exclusions.md)
+
+- **Missing or invalid data.** A film without a usable release date stays out of both windows. A dated, released film with unusable rating inputs stays unscored and can make its bundle ineligible. Missing budget or gross affects only the financial calculations that need it.
+- **Provisional.** Compare the flagged TMDB records before relying on that window’s shortlist or ratings preference. A shared title and year calls for review, and both movie IDs stay visible.
+- **Too few options.** If either side has fewer than five eligible options, use the available shortlist entries as leads and hold back a firm franchise-versus-standalone recommendation.
+
 ## Test the pipeline
 
-The tests cover candidate IDs, the cache, the removal log, fetch outcomes, and normalization. They also check that the pipeline stops on duplicate cache entries, unexpected fetch results, or changed movie IDs after normalization. They use simulated TMDB responses and run without an API token.
+The tests cover candidate IDs, the cache, the removal log, fetch outcomes, and normalization. They also check that the pipeline stops on duplicate cache entries, unexpected fetch results, or changed movie IDs. They also verify that rating gaps and possible duplicate films are reported while the run continues. They use simulated TMDB responses and run without an API token.
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" \

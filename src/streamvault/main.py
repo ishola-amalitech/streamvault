@@ -11,8 +11,9 @@ from streamvault.config import CONFIG
 from streamvault.diagnostics import print_check_report, run_data_checks
 from streamvault.fetch_movies import FetchFailure, FetchMissing, fetch_movies
 from streamvault.load import iter_movie_ids
+from streamvault.movie_quality import film_quality_issues
 from streamvault.normalize import normalization_checks, normalize_movie_records
-from streamvault.run_record import read_record, snapshot_inputs, write_record
+from streamvault.run_record import read_record, snapshot_inputs, write_record, write_text_atomic
 
 
 async def run() -> None:
@@ -71,7 +72,6 @@ async def run() -> None:
 
     if not movie_ids:
         print("No movie IDs to fetch.")
-        return
 
     # Keep the previous download report if this run used only cached movies.
     if fetch_seconds is not None:
@@ -130,6 +130,12 @@ async def run() -> None:
     tables = normalize_movie_records(available_records.values())
     stage = "After normalization"
     print_check_report(stage, normalization_checks(stage, tables, set(available_records)))
+
+    # Keep all affected IDs in a report Adjoa can review after the run.
+    issues = film_quality_issues(tables.movies)
+    quality_path = CONFIG.cache_file.with_suffix(".quality.csv")
+    write_text_atomic(quality_path, issues.to_csv(index=False))
+    print(f"Film data quality: {issues['movie_id'].nunique()} films with issues. See {quality_path}.")
 
 
 def main() -> None:

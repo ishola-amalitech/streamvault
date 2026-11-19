@@ -12,6 +12,22 @@ Each film in a shortlisted bundle counts as one shortlisted film in this report.
 | All years | 12 | 112 | 100 |
 | 2000 onward | 14 | 112 | 98 |
 
+## Evidence left for Adjoa
+
+A firm comparison needs at least 5 eligible bundles and 5 eligible standalones in the window.
+A window with a possible duplicate is provisional until the flags are reviewed.
+
+| Window | Eligible bundles | Eligible standalones | Bundle spots unfilled | Standalone spots unfilled | Films flagged for duplicate review | Comparison evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| All years | 32 | 16 | 0 | 0 | 0 | Enough options to compare |
+| 2000 onward | 24 | 8 | 0 | 0 | 0 | Enough options to compare |
+
+## Film data issues to review
+
+Films can appear more than once here if they have multiple issues.
+
+No film data issues found.
+
 ## Source rows left out before scoring
 
 15 of 127 CSV rows were left out here.
