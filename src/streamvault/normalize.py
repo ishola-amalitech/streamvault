@@ -21,6 +21,7 @@ from streamvault._normalize_tables import (
     positive_id,
     text_key,
 )
+from streamvault.diagnostics import run_data_checks
 
 
 @dataclass(frozen=True)
@@ -184,3 +185,56 @@ def normalize_movie_records(records: Iterable[Row]) -> MovieTables:
         cast_credits=_credit_frame(credits_by_role["cast"], CAST_CREDIT_FIELDS),
         crew_credits=_credit_frame(credits_by_role["crew"], CREW_CREDIT_FIELDS),
     )
+
+
+def normalization_checks(
+    stage: str, tables: MovieTables, expected_ids: set[str]
+) -> pd.DataFrame:
+    """Check the film rows and links the recommendation relies on."""
+    movies = tables.movies
+    movie_ids = movies["movie_id"]
+    actual_ids = set(movie_ids.dropna().astype("string"))
+    missing = sorted(expected_ids - actual_ids)
+    unexpected = sorted(actual_ids - expected_ids)
+
+    # A broken link to a film, genre, or person can bias the genre and talent analysis.
+    broken_links: list[str] = []
+    for name, links, key, reference in (
+        ("genres", tables.movie_genres, "genre_id", tables.genres),
+        ("cast", tables.cast_credits, "person_id", tables.people),
+        ("crew", tables.crew_credits, "person_id", tables.people),
+    ):
+        bad = ~links["movie_id"].isin(movie_ids) | ~links[key].isin(reference[key])
+        if bad.any():
+            broken_links.append(f"{name}: {int(bad.sum())} broken links")
+
+    # Test the collection join used to identify bundles. Missing collection IDs are allowed.
+    joined = movies[["movie_id", "collection_id"]].merge(
+        tables.collections[["collection_id"]],
+        on="collection_id",
+        how="left",
+        validate="many_to_one",
+        indicator=True,
+    )
+    unmatched = joined["collection_id"].notna() & joined["_merge"].eq("left_only")
+    return run_data_checks(stage, {
+        "Movie IDs are present and unique": (
+            bool(movie_ids.notna().all() and movie_ids.is_unique),
+            f"{movie_ids.nunique()} distinct IDs in {len(movies)} rows",
+        ),
+        "Movie IDs match the resolved candidates": (
+            not missing and not unexpected,
+            f"{len(expected_ids)} expected, {len(actual_ids)} found. "
+            f"Missing examples: {missing[:5]}. Unexpected examples: {unexpected[:5]}.",
+        ),
+        "Genre and credit links resolve": (
+            not broken_links,
+            ", ".join(broken_links) or "Every link points to an existing film and reference",
+        ),
+        "Collection join preserves films and resolves supplied IDs": (
+            bool(len(joined) == len(movies) and joined["movie_id"].equals(movie_ids)
+                 and not unmatched.any()),
+            f"{len(joined)} rows from {len(movies)} films. "
+            f"Unmatched example movie IDs: {joined.loc[unmatched, 'movie_id'].head().tolist()}",
+        ),
+    })

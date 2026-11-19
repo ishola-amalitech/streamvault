@@ -8,10 +8,60 @@ from streamvault.config import CONFIG
 from streamvault.fetch_movies import FetchFailure, FetchMissing
 from streamvault.load import MovieId
 from streamvault.main import run
+from streamvault.normalize import normalize_movie_records
 from streamvault.run_record import read_record, snapshot_inputs
 
 
 class MainTests(unittest.IsolatedAsyncioTestCase):
+    async def test_loading_stops_on_duplicate_cached_candidates(self) -> None:
+        with (
+            patch("streamvault.main.iter_movie_ids", return_value=[MovieId("155", 2)]),
+            patch(
+                "streamvault.main.iter_cached_records",
+                return_value=[("155", {"id": 155}), ("00155", {"id": "00155"})],
+            ),
+            patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch,
+            self.assertRaisesRegex(ValueError, "After loading.*repeated IDs"),
+        ):
+            await run()
+        fetch.assert_not_awaited()
+
+    async def test_fetching_stops_before_caching_an_unexpected_movie(self) -> None:
+        with (
+            patch("streamvault.main.iter_movie_ids", return_value=[MovieId("155", 2)]),
+            patch("streamvault.main.iter_cached_records", return_value=[]),
+            patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch,
+            patch("streamvault.main.write_cached_records") as write_cache,
+            self.assertRaisesRegex(ValueError, r"After fetching.*Unexpected: \['999'\]"),
+        ):
+            fetch.return_value = ([{"id": 999}], [], [])
+            await run()
+        write_cache.assert_not_called()
+
+    async def test_pipeline_stops_when_normalization_returns_the_wrong_film(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = replace(
+                CONFIG, source_file=root / "titles.csv", cache_file=root / "movies.jsonl",
+                removals_file=root / "removals.csv",
+            )
+            config.source_file.write_text("tmdb_id\n155\n", encoding="utf-8")
+            # Another title in the shared cache must stay outside this run.
+            config.cache_file.write_text(
+                '{"id":155,"cached_at_utc":"2026-01-01T00:00:00Z"}\n'
+                '{"id":165,"cached_at_utc":"2026-01-01T00:00:00Z"}\n',
+                encoding="utf-8",
+            )
+            wrong_tables = normalize_movie_records([{"id": 999}])
+            with (
+                patch("streamvault.main.CONFIG", config),
+                patch("streamvault.main.normalize_movie_records", return_value=wrong_tables) as normalize,
+                self.assertRaisesRegex(ValueError, r"Missing examples: \['155'\]"),
+            ):
+                await run()
+            inputs = list(normalize.call_args.args[0])
+            self.assertEqual([record["id"] for record in inputs], [155])
+
     async def test_cached_movie_ids_do_not_trigger_a_fetch(self) -> None:
         with (
             patch(
@@ -19,8 +69,8 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                 return_value=[MovieId("155", 1)],
             ),
             patch(
-                "streamvault.main.load_cached_records",
-                return_value={"155": {"id": 155}},
+                "streamvault.main.iter_cached_records",
+                return_value=[("155", {"id": 155})],
             ),
             patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch,
             patch("streamvault.main.write_cached_records") as write_cache,

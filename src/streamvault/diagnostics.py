@@ -34,3 +34,10 @@ def raise_for_failed_checks(stage: str, report: pd.DataFrame) -> None:
         raise ValueError(
             f"Data checks failed at stage '{stage}': {', '.join(messages)}"
         )
+
+
+def print_check_report(stage: str, report: pd.DataFrame) -> None:
+    """Show the command-line report before stopping on any failed checks."""
+    print(f"\n{stage}")
+    print(report.to_string(index=False))
+    raise_for_failed_checks(stage, report)

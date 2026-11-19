@@ -4,14 +4,15 @@ StreamVault is a lab about a fictional $14M film licensing decision. The pipelin
 
 ## The pipeline
 
-**Start in `src/streamvault/main.py`.** The `streamvault` command runs this file, which coordinates the steps below. Today the pipeline automates acquisition, from reading the candidate list through saving the TMDB responses. [Pipeline entry point](src/streamvault/main.py)
+**Start in `src/streamvault/main.py`.** The `streamvault` command runs this file, which coordinates the steps below. The pipeline fetches and caches TMDB responses, then turns the resolved candidates into tables and validates them. [Pipeline entry point](src/streamvault/main.py)
 
 | Step | What happens | Code |
 | --- | --- | --- |
 | Read the candidate list | Read one TMDB ID per row from `id_list.csv`. Keep the first valid entry for each ID and log blank, invalid, and duplicate rows. | [load.py](src/streamvault/load.py), [removals.py](src/streamvault/removals.py) |
-| Check the cache | Reuse saved movies and pass only the missing IDs to the downloader. | [cache.py](src/streamvault/cache.py) |
-| Fetch the missing movies | Request movie details and credits from TMDB, limit how fast requests start, and retry temporary failures. Log lookup misses with their source rows. | [fetch_movies.py](src/streamvault/fetch_movies.py) |
+| Check the cache | Stop if a current candidate has duplicate cache entries. Reuse saved movies and pass only the missing IDs to the downloader. | [cache.py](src/streamvault/cache.py) |
+| Fetch the missing movies | Request movie details and credits from TMDB, limit request speed, and retry temporary failures. Report whether every requested ID has one outcome before saving new responses. | [fetch_movies.py](src/streamvault/fetch_movies.py) |
 | Save and report | Add successful responses to the local cache. Record the fetch time and unresolved IDs when the pipeline makes requests, then print a summary. | [cache.py](src/streamvault/cache.py), [run_record.py](src/streamvault/run_record.py) |
+| Normalize and validate | Build the tables in memory, check that each resolved candidate appears once, and verify the collection join and links used for genre and talent analysis. Print the results and stop if a check fails. | [normalize.py](src/streamvault/normalize.py), [diagnostics.py](src/streamvault/diagnostics.py) |
 
 The [candidate list](id_list.csv) is included in the checkout. [config.toml](config.toml) sets the file paths, request limits, timeouts, and retry settings.
 
@@ -58,7 +59,7 @@ A repeat run reuses saved entries and tries uncached IDs again. Git ignores the 
 
 ## Test the pipeline
 
-The tests cover candidate IDs, the cache, the removal log, and fetch outcomes. They use simulated TMDB responses and run without an API token.
+The tests cover candidate IDs, the cache, the removal log, fetch outcomes, and normalization. They also check that the pipeline stops on duplicate cache entries, unexpected fetch results, or changed movie IDs after normalization. They use simulated TMDB responses and run without an API token.
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" \
@@ -70,11 +71,11 @@ With local uv, run `uv run --locked python -m unittest discover -s tests`.
 
 ## How the notebooks informed the work
 
-The notebooks show the checks and experiments behind the pipeline design and the recommendation. The next step for automation is to bring the proven preparation, checks, and recommendation steps into the pipeline.
+The notebooks show the checks and experiments behind the pipeline design and the recommendation. Notebook 01 shows the preparation and join checks that informed the pipeline's normalization stage. The recommendation analysis still runs in Notebook 04.
 
 | Notebook | What it contributed |
 | --- | --- |
-| [01 · Prepare the data](notebooks/01_prep_movie_data.ipynb) | Shows how to turn nested TMDB responses into usable tables, check joins, and account for source rows. |
+| [01 · Validate normalization](notebooks/01_validate_normalization.ipynb) | Shows how to turn nested TMDB responses into usable tables, check joins, and account for source rows. |
 | [02 · Profile the data](notebooks/02_profile_movie_data.ipynb) | Finds missing values, duplicates, unusual values, and columns that need cleaning. |
 | [03 · Explore the data](notebooks/03_eda_movie_data.ipynb) | Explores patterns in ratings, box office, genres, franchises, and talent. |
 | [04 · Make the recommendation](notebooks/04_recommendation.ipynb) | Compares bundles and standalones, ranks targets in both release windows, and tests how sensitive the results are to changes in scoring. |
