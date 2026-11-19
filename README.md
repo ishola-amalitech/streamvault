@@ -1,56 +1,42 @@
-# Streamvault
+# StreamVault
 
-## Fetch movie data
+StreamVault is a data-analysis lab about a fictional $14M back-catalog licensing decision. Kwame Boateng needs a recommendation on franchise bundles versus standalone films, a shortlist, a read on talent signals, and a relative-value note. Yaw in Finance requires a separate comparison for films released from 2000 onward. [Local lab brief](data/lab_brief.md)
 
-Set `TMDB_API_READ_ACCESS_TOKEN`, then run:
+## Run locally
 
-```sh
-uv run streamvault
-```
-
-Application settings live in the root [config.toml](config.toml). It controls
-the TMDB endpoint and appended response, request concurrency/rate/timeouts,
-retry/backoff policy, and input/cache/removal-log paths. Paths are relative to
-the config file. Keep the token value in the
-environment; do not put secrets in `config.toml`. Package, build, and dependency
-settings remain in `pyproject.toml`.
-
-By default, fetched movie responses are saved as JSONL in
-`data/raw/movies.jsonl`. Later runs use those cached responses and only request
-IDs that are not already cached. To refresh existing records, remove the cache
-file before running the command again.
-
-## Explore the dataset
-
-Launch the project notebook with:
+From the repository root, use Python 3.14 and [uv](https://docs.astral.sh/uv/). Install the locked dependencies, then set `TMDB_API_READ_ACCESS_TOKEN` to your TMDB API read access token and run the acquisition command.
 
 ```sh
-uv run jupyter lab notebooks/explore_movies.ipynb
+uv sync --locked
+uv run --locked streamvault
+uv run --locked jupyter lab
 ```
 
-The notebook reads the local cache and does not make API requests. Run
-`uv run streamvault` first if the cache does not exist yet.
+You can also set the token in a local `.env` file and use `uv run --locked --env-file .env streamvault`. Keep the token outside tracked files.
 
-The `movies` DataFrame has one row per movie. The notebook exposes reference
-DataFrames for `genres`, `companies`, `countries`, `languages`, `collections`,
-and `people`. Movie relationships are stored in bridge DataFrames such as
-`movie_genres` and `movie_production_countries`. `cast_credits` and
-`crew_credits` retain each credit by its `credit_id`. Join a bridge to its
-reference DataFrame by the entity ID, and then to `movies` by `movie_id`.
-Release dates are parsed as
-datetimes, blank text values become missing values, and `movies.collection_id`
-references the `collections` DataFrame. `companies.origin_country_code` also
-references `countries`. Person popularity remains on credit rows because it
-varies across the cached movie responses.
+The fetch command reads [id_list.csv](id_list.csv), requests movie details with appended credits, and saves responses to `data/raw/movies.jsonl`. It records invalid, blank, duplicate, and missing inputs in `id_list_removals.csv`. Keep the cache and removal log together when reproducing a run. Both are local and ignored by Git. Configuration, including the request limits and local paths, lives in [config.toml](config.toml).
 
-Project decisions and the plain-language rationale are recorded in [DECISIONS.md](DECISIONS.md).
+Later fetches reuse cached IDs. To refresh them, archive the current cache, then move it out of the configured path before running the fetch command again. For a new candidate list, use a new cache and removal log until analysis filters the cache to the current IDs. Notebook runs read the local files.
 
-Cached raw movie responses include a UTC `cached_at_utc` timestamp. Existing cache entries without timestamps are backfilled the next time `uv run streamvault` runs. The backfill time is when the existing record was timestamped, not its original fetch time.
+## Notebook order
 
-Requests have timeouts and retry temporary network, rate-limit, and server errors. A TMDB 404 is added to the local removal log and does not stop the rest of the batch.
+| Notebook | Purpose | Status |
+| --- | --- | --- |
+| [01 Prep](notebooks/01_prep_movie_data.ipynb) | Normalize responses, validate keys and joins, and reconcile each source row. | Runs against the local cache and removal log. |
+| [02 Profile](notebooks/02_profile_movie_data.ipynb) | Profile schema, duplicates, missingness, value ranges, and candidate data types. | Complete for the current snapshot. |
+| [03 EDA](notebooks/03_eda_movie_data.ipynb) | Explore numeric, genre, collection, and talent patterns and review plausible extremes. | Complete for the current snapshot. |
+| [04 Recommendation](notebooks/04_recommendation.ipynb) | Apply a fixed ranking method to both windows and produce shortlists and a deal note. | Plan documented. The executable analysis and one-page memo remain pending. |
 
-The notebook displays pass/fail data checks after loading, normalization, and
-joining, with each stage shown once above its report. A failed check remains
-visible and raises an error before later analysis continues. See
-[DECISIONS.md](DECISIONS.md) for the table definitions, check rules, and join
-rationale.
+Run each analysis notebook from the top in its own kernel. The first three notebooks load their respective inputs directly from the configured local paths. The current snapshot reconciles **127 list rows to 112 distinct cached titles**, with 71 titles from 2000 onward. [Findings log](docs/findings.md)
+
+Run the package tests with this command.
+
+```sh
+uv run --locked python -m unittest discover -s tests
+```
+
+## Project records
+
+- [Findings](docs/findings.md) ranks issues by decision risk and traces them to evidence and handling.
+- [Questions](docs/questions.md) records answers drawn from the brief, completed analysis, and explicit analyst assumptions.
+- [Decisions](docs/DECISIONS.md) explains technical and analytical choices, the alternatives, and what is still open.

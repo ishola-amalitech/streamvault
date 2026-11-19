@@ -11,7 +11,9 @@ wheels/
 .coverage*
 htmlcov/
 id_list_removals.csv
-data/raw/
+/data/
+/AGENTS.md
+/agent.md
 
 # Virtual environments
 .venv
