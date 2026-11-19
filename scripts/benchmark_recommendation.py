@@ -15,8 +15,8 @@ from IPython.utils.capture import capture_output
 import nbformat
 
 import streamvault.config as config
-from streamvault.cache import iter_cached_records, write_cached_records
-from streamvault.load import iter_movie_id_rows, MovieId
+from streamvault.cache import iter_cached_records, match_cached_candidates, write_cached_records
+from streamvault.load import iter_movie_id_rows
 from streamvault.run_record import read_record, write_record
 
 
@@ -85,14 +85,14 @@ def time_snapshot(settings):
 
 
 def read_templates(source_config):
-    candidate_ids = {
-        int(row.value) for row in iter_movie_id_rows(source_config.source_file)
-        if isinstance(row, MovieId)
-    }
-    templates = sorted(
-        (record for key, record in iter_cached_records(source_config.cache_file) if int(key) in candidate_ids),
-        key=lambda record: int(record["id"]),
+    cache = match_cached_candidates(
+        iter_cached_records(source_config.cache_file),
+        iter_movie_id_rows(source_config.source_file),
     )
+    passed, details = cache.uniqueness_check()
+    if not passed:
+        raise ValueError(details)
+    templates = [cache.records[key] for key in sorted(cache.records, key=int)]
     if not templates:
         raise ValueError("Fetch the candidate cache before running the local timing check.")
     return templates

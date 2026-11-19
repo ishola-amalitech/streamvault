@@ -76,13 +76,13 @@ The notebooks show the checks and experiments behind the pipeline design and the
 | Notebook | What it contributed |
 | --- | --- |
 | [01 · Validate normalization](notebooks/01_validate_normalization.ipynb) | Shows how to turn nested TMDB responses into usable tables, check joins, and account for source rows. |
-| [02 · Profile the data](notebooks/02_profile_movie_data.ipynb) | Finds missing values, duplicates, unusual values, and columns that need cleaning. |
-| [03 · Explore the data](notebooks/03_eda_movie_data.ipynb) | Explores patterns in ratings, box office, genres, franchises, and talent. |
+| [02 · Profile the data](notebooks/02_profile_movie_data.ipynb) | Checks current candidates for missing fields, numeric validity, and possible duplicate films. It also audits identical raw records across the whole cache. |
+| [03 · Explore the data](notebooks/03_eda_movie_data.ipynb) | Flags unusually high or low values and explores patterns in ratings, box office, genres, franchises, and talent. |
 | [04 · Make the recommendation](notebooks/04_recommendation.ipynb) | Compares bundles and standalones, ranks targets in both release windows, and tests how sensitive the results are to changes in scoring. |
 
 The notebooks already share code for turning raw responses into tables and running data checks. [normalize.py](src/streamvault/normalize.py) · [diagnostics.py](src/streamvault/diagnostics.py)
 
-The notebooks use the pipeline's saved data. For a fresh analysis, open Notebook 04 in a fresh kernel and choose **Run All**. It writes the ranked CSVs and analysis run record under `data/raw/movies.recommendation/` and updates the [exclusions report](docs/recommendation_exclusions.md). The one-page memo and deal note are pending.
+The pipeline and all four notebooks use the same candidate matching rules. They match the valid IDs in the current CSV to the saved TMDB records and stop if a current candidate has multiple cache entries. Older films can stay in the cache for future reuse. Notebook 02 labels its whole-cache raw duplicate audit separately. For a fresh analysis, open Notebook 04 in a fresh kernel and choose **Run All**. It writes the ranked CSVs and analysis run record under `data/raw/movies.recommendation/` and updates the [exclusions report](docs/recommendation_exclusions.md). The one-page memo and deal note are pending.
 
 To open JupyterLab with Docker, use the image built above and open the link printed in the terminal. With local uv, run `uv run --locked jupyter lab`.
 

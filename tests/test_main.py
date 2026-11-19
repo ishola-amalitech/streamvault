@@ -18,7 +18,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             patch("streamvault.main.iter_movie_ids", return_value=[MovieId("155", 2)]),
             patch(
                 "streamvault.main.iter_cached_records",
-                return_value=[("155", {"id": 155}), ("00155", {"id": "00155"})],
+                return_value=[("155", {"id": 155}), ("155", {"id": "00155"})],
             ),
             patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch,
             self.assertRaisesRegex(ValueError, "After loading.*repeated IDs"),
