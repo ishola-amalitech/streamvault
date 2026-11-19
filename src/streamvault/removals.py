@@ -20,6 +20,7 @@ def append_removals(path: Path, removals: Iterable[Removal]) -> None:
     if not pending:
         return
 
+    # Read earlier entries so rerunning the same list adds each issue only once.
     existing: set[tuple[str, str, str, str]] = set()
     if path.exists():
         with path.open(newline="", encoding="utf-8") as file:

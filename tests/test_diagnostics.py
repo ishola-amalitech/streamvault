@@ -25,7 +25,7 @@ class DataCheckReportTests(unittest.TestCase):
 
         self.assertEqual(report.loc[0, "status"], "FAIL")
         self.assertEqual(report.loc[0, "details"], "duplicate ID")
-        with self.assertRaisesRegex(ValueError, "IDs are unique"):
+        with self.assertRaisesRegex(ValueError, r"loaded.*IDs are unique.*duplicate ID"):
             raise_for_failed_checks("loaded", report)
 
 

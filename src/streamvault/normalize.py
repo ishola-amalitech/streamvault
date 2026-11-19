@@ -277,6 +277,7 @@ def normalize_movie_records(
     seen_movie_ids: set[int] = set()
     seen_credit_ids: set[str] = set()
 
+    # Keep nested data out of the film rows. Collections and credits have their own tables.
     nested_fields = {
         "belongs_to_collection",
         "cached_at_utc",
@@ -471,6 +472,7 @@ def normalize_movie_records(
             )
 
     movies = pd.DataFrame.from_records(movie_rows)
+    # Keep the ID columns available when the cache has no films.
     if "movie_id" not in movies:
         movies["movie_id"] = pd.Series(dtype="int64")
     if "collection_id" not in movies:
@@ -482,6 +484,7 @@ def normalize_movie_records(
         parsed_dates = pd.to_datetime(
             release_dates, format="%Y-%m-%d", errors="coerce"
         )
+        # Allow a missing date and flag a date value we could not read.
         invalid_dates = release_dates.notna() & parsed_dates.isna()
         if invalid_dates.any():
             invalid_movie_ids = movies.loc[invalid_dates, "movie_id"].tolist()

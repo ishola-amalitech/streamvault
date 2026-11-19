@@ -10,7 +10,7 @@ The input contract is a single `tmdb_id` column. The parser keeps the first occu
 
 Cache the successful JSON responses by ID in JSONL, stamp them in UTC, and replace the file atomically. The backfill timestamp indicates when an existing entry was stamped. Reuse cached IDs and retry uncached IDs on subsequent runs. The removal log records 404s and empty responses alongside malformed or duplicate inputs. Terminal request failures are printed with IDs. A durable terminal-failure record remains to be implemented.
 
-The prep notebook reconciles physical input rows against cached IDs and the removal log. Its source join retains cached matches for duplicate input rows so the audit can account for all 127 source lines while counting 112 distinct titles. Unexplained cache misses fail the source-coverage check. Refreshing the whole cache every time would provide fresher audience metrics at the cost of more API traffic, slower meetings, and comparisons against different snapshots. Until the recommendation scopes inputs explicitly, preserve a cache and removal log for each candidate-list snapshot to avoid retaining past candidates in an analysis. [Configuration](../config.toml) · [ID parser](../src/streamvault/load.py) · [Fetcher](../src/streamvault/fetch_movies.py) · [Cache](../src/streamvault/cache.py) · [Prep](../notebooks/01_prep_movie_data.ipynb)
+The prep notebook reconciles source rows against cached IDs and the removal log. Notebook 04 reuses the source parser in read-only mode and scopes the cache to the current list. It treats IDs with leading zeros as the same numeric ID. For an uncached ID, it looks up recorded misses by ID within the configured source filename, so the record survives a moved row. The log can reflect an older lookup. A missing cache record without a logged reason stops the run because an unexplained gap could affect the shortlist. Refreshing the whole cache each run would provide fresher metrics at the cost of more API traffic, slower meetings, and comparisons against different snapshots. [Configuration](../config.toml) · [ID parser](../src/streamvault/load.py) · [Fetcher](../src/streamvault/fetch_movies.py) · [Cache](../src/streamvault/cache.py) · [Recommendation](../notebooks/04_recommendation.ipynb)
 
 ### D02 · Keep film, relationship, and credit grains distinct
 
@@ -29,7 +29,9 @@ The raw loader checks JSON, object shape and positive numeric IDs. The normalize
 
 ### D03 · Treat validity, missingness and plausible extremes according to their effect
 
-Normalize blank text to missing and parse release dates. Preserve optional text or reference-label gaps. Keep nonnegative numeric fields and a 0–10 vote rating as validity expectations. Current numeric range checks are profiling reports. The recommendation plan adds KPI-specific eligibility gates, with separate counts for missing values, zeros, and impossible values. Positive budget and gross are required for the planned financial proxies. Observed ranges are descriptive.
+Normalize blank text to missing and parse release dates. Preserve optional text or reference-label gaps. Keep nonnegative numeric fields and a 0–10 vote rating as validity expectations. Notebook 02 reports observed ranges for review. The recommendation plan adds KPI-specific eligibility gates, with separate counts for missing values, zeros, and impossible values. Positive budget and gross are required for the planned financial proxies.
+
+Notebook 04 stops on repeated in-scope cache IDs, missing or unreadable cache timestamps, invalid recorded budget or gross, and collection joins that drop or fail to match IDs. The release check allows 1880 through the newest in-scope cache timestamp year for titles marked as released. This broad range catches date errors and stays fixed when Adjoa reruns the same snapshot. Its bounds are analyst choices. Missing ratings and votes appear in the coverage report. Step 2 will record the affected films and check that every film it scores has the required inputs. [Recommendation notebook](../notebooks/04_recommendation.ipynb)
 
 Keep plausible IQR extremes in the primary analysis and use omission as a sensitivity case. Discarding observations because they are rare would remove some of the films most relevant to the bundle decision. Keeping a plausible outlier can make a result depend heavily on one title, so report influence and disclose when the direction changes. [Profile](../notebooks/02_profile_movie_data.ipynb) · [EDA](../notebooks/03_eda_movie_data.ipynb)
 
@@ -39,7 +41,7 @@ Benchmark downcasts and categories on a copy. The experiment reduced movie-frame
 
 ## Chosen methods for the recommendation plan
 
-These decisions make the planned analysis reproducible. Notebook 04 specifies the operational rules and sensitivity cases. Execution, conclusions, and the client memo remain pending. [Recommendation notebook](../notebooks/04_recommendation.ipynb)
+Notebook 04 implements candidate scoping and reports the two release windows and outcome coverage. The scoring rules and sensitivity cases are documented for later implementation. [Recommendation notebook](../notebooks/04_recommendation.ipynb)
 
 ### D05 · Bound the conclusion to the list and the two release windows
 

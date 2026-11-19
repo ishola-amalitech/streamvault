@@ -3,13 +3,22 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from streamvault.cache import load_cached_records, write_cached_records
+from streamvault.cache import iter_cached_records, load_cached_records, write_cached_records
 
 
 class CachedRecordsTests(unittest.TestCase):
     def test_missing_cache_is_empty(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(load_cached_records(Path(directory) / "movies.jsonl"), {})
+
+    def test_reader_exposes_repeated_ids_before_loading_into_a_dictionary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "movies.jsonl"
+            path.write_text('{"id": 155, "title": "Older"}\n{"id": 155, "title": "Newer"}\n')
+
+            entries = list(iter_cached_records(path))
+            self.assertEqual([key for key, _ in entries], ["155", "155"])
+            self.assertEqual(load_cached_records(path)["155"]["title"], "Newer")
 
     def test_write_and_load_cache_deduplicates_by_movie_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

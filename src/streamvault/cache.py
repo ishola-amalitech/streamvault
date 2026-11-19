@@ -1,6 +1,6 @@
 import json
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -18,12 +18,12 @@ def _movie_id(record: dict[str, object]) -> str:
     return movie_id
 
 
-def load_cached_records(path: str | Path) -> dict[str, dict[str, object]]:
+def iter_cached_records(path: str | Path) -> Iterator[tuple[str, dict[str, object]]]:
+    """Read each cache entry so a caller can check for repeated IDs."""
     cache_path = Path(path)
     if not cache_path.exists():
-        return {}
+        return
 
-    records: dict[str, dict[str, object]] = {}
     with cache_path.open(encoding="utf-8") as cache_file:
         for line_number, line in enumerate(cache_file, start=1):
             if not line.strip():
@@ -44,8 +44,12 @@ def load_cached_records(path: str | Path) -> dict[str, dict[str, object]]:
                 )
 
             record_dict = cast(dict[str, object], record)
-            records[_movie_id(record_dict)] = record_dict
-    return records
+            yield _movie_id(record_dict), record_dict
+
+
+def load_cached_records(path: str | Path) -> dict[str, dict[str, object]]:
+    # If an ID appears more than once, keep the last entry in the file.
+    return dict(iter_cached_records(path))
 
 
 def write_cached_records(
@@ -79,6 +83,7 @@ def write_cached_records(
 
         if temporary_path is None:
             raise RuntimeError("The temporary cache file was not created.")
+        # Replace the cache only after the new file has been fully written.
         os.replace(temporary_path, cache_path)
     finally:
         if temporary_path is not None:

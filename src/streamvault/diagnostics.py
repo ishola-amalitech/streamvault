@@ -27,8 +27,10 @@ def run_data_checks(stage: str, checks: Mapping[str, DataCheck]) -> pd.DataFrame
 
 
 def raise_for_failed_checks(stage: str, report: pd.DataFrame) -> None:
-    failed_checks = report.loc[report["status"].eq("FAIL"), "check"].tolist()
-    if failed_checks:
+    failed = report.loc[report["status"].eq("FAIL"), ["check", "details"]]
+    if not failed.empty:
+        # Keep the details visible when a script raises without printing the report.
+        messages = failed["check"] + " (" + failed["details"] + ")"
         raise ValueError(
-            f"Data checks failed at stage '{stage}': {', '.join(failed_checks)}"
+            f"Data checks failed at stage '{stage}': {', '.join(messages)}"
         )
