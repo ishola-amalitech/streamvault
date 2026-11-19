@@ -14,6 +14,8 @@ DUPLICATE_ID_REASON = "Duplicate TMDB movie ID; skipped."
 class MovieId:
     value: str
     source_line: int
+    # Keep the original text for the audit when it differs from the ID we fetch.
+    source_value: str | None = None
 
 
 def iter_movie_id_rows(file_path: str | Path) -> Iterator[MovieId | Removal]:
@@ -36,44 +38,39 @@ def iter_movie_id_rows(file_path: str | Path) -> Iterator[MovieId | Removal]:
                 raise ValueError(
                     f"Expected one TMDB ID at line {source_line} in {source_path}."
                 )
-            movie_id = row[0].strip() if row else ""
-            if not movie_id:
+            source_value = row[0].strip() if row else ""
+            # ID 00123 refers to the same film as 123. All-zero IDs are invalid.
+            movie_id = source_value.lstrip("0")
+            if not source_value:
                 reason = "Blank row; no TMDB movie ID."
-            elif (
-                not movie_id.isascii()
-                or not movie_id.isdecimal()
-                or int(movie_id) <= 0
-            ):
+            elif not movie_id or not movie_id.isascii() or not movie_id.isdecimal():
                 reason = "Not a positive numeric TMDB movie ID."
             elif movie_id in seen_ids:
                 reason = DUPLICATE_ID_REASON
             else:
                 seen_ids.add(movie_id)
-                yield MovieId(movie_id, source_line)
+                original = source_value if source_value != movie_id else None
+                yield MovieId(movie_id, source_line, original)
                 continue
 
-            yield Removal(source_path.name, source_line, movie_id, reason)
+            yield Removal(source_path.name, source_line, source_value, reason)
 
 
 def iter_movie_ids(
     file_path: str | Path, removals_path: str | Path | None = None
 ) -> Iterator[MovieId]:
-    source_path = Path(file_path)
+    """Yield IDs to fetch and write skipped entries to the removal log."""
     removal_log_path = (
-        Path(removals_path)
-        if removals_path is not None
-        else CONFIG.removals_file
+        CONFIG.removals_file if removals_path is None else Path(removals_path)
     )
     removals: list[Removal] = []
 
     try:
-        for row in iter_movie_id_rows(source_path):
+        for row in iter_movie_id_rows(file_path):
             if isinstance(row, MovieId):
                 yield row
             else:
                 removals.append(row)
-    except FileNotFoundError:
-        print(f"Error: The file at {source_path} was not found.")
     finally:
         # Save problems already found even if reading the list stops early.
         append_removals(removal_log_path, removals)

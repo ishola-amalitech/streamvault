@@ -1,51 +1,124 @@
 # StreamVault
 
-StreamVault is a data-analysis lab about a fictional $14M back-catalog licensing decision. Kwame Boateng needs a recommendation on franchise bundles versus standalone films, a shortlist, a read on talent signals, and a relative-value note. Yaw in Finance requires a separate comparison for films released from 2000 onward. [Local lab brief](data/lab_brief.md)
+StreamVault is a data-analysis lab for a fictional $14M film licensing decision. It compares franchise bundles with standalone films, ranks targets for each, and looks for useful director and cast signals. The analysis runs twice, once for all release years and once for films released on or after 1 January 2000. The recommendation analysis is in place. The one-page memo and deal note are pending. [Lab brief, available in the local lab files](data/lab_brief.md)
 
-## Run locally
+## Start here
 
-From the repository root, use Python 3.14 and [uv](https://docs.astral.sh/uv/). Install the locked dependencies, then set `TMDB_API_READ_ACCESS_TOKEN` to your TMDB API read access token and run the acquisition command.
+The project starts with [the candidate list](id_list.csv). It contains TMDB movie IDs. The `streamvault` command reads that list and downloads movie details and credits into a local cache. The notebooks read the cache, turn the data into tables, and explain the results.
+
+```text
+id_list.csv → streamvault → local movie cache → Notebook 04 → rankings and reports
+                                   └──────────→ Notebooks 01–03 → data checks and exploration
+```
+
+## Option A: Set up with Docker
+
+Install Docker and start it. Run the commands below from the repository root in a Bash shell. The image installs Python 3.14, uv, and the locked dependencies, including JupyterLab. Docker is the only tool you need to install for this route. [Dockerfile](Dockerfile)
+
+1. Build the image.
+
+   ```sh
+   docker build -t streamvault .
+   ```
+
+2. For a fresh download, get a TMDB API **read access token** and create a local `.env` file in the repository root. Replace the placeholder with your token. Git and the Docker build ignore this file.
+
+   ```dotenv
+   TMDB_API_READ_ACCESS_TOKEN=your_read_access_token
+   ```
+
+   Download the candidate data. Docker runs the command with your user ID and saves the results in your checkout. If you already have a snapshot for this list, restore its cache and logs to the paths below and skip this step.
+
+   ```sh
+   docker run --rm --user "$(id -u):$(id -g)" \
+     --mount "type=bind,source=$PWD,target=/app" \
+     --env-file .env streamvault streamvault
+   ```
+
+3. Start JupyterLab. Open the link printed in the terminal that starts with `http://127.0.0.1:8888` and includes the Jupyter token. Press **Ctrl+C** in the terminal when you are done. The mounted checkout keeps your notebook changes and reports.
+
+   ```sh
+   docker run --rm -it --user "$(id -u):$(id -g)" \
+     --mount "type=bind,source=$PWD,target=/app" \
+     --publish 127.0.0.1:8888:8888 streamvault
+   ```
+
+   Open [Notebook 04](notebooks/04_recommendation.ipynb) and choose **Run All** in a fresh kernel. Notebooks 01–03 can also be run separately in fresh kernels.
+
+Rebuild the image when the Python dependencies or Dockerfile change. In the Docker commands, the first `streamvault` names the image. In step 2, the second `streamvault` is the download command.
+
+## Option B: Set up with local uv
+
+If you prefer to run directly on your laptop, install [uv](https://docs.astral.sh/uv/) and run these commands from the repository root. Use the same `.env` file for the download. Skip the download if you have restored a saved snapshot.
 
 ```sh
+uv python install 3.14
 uv sync --locked
-uv run --locked streamvault
+uv run --locked --env-file .env streamvault
 uv run --locked jupyter lab
 ```
 
-You can also set the token in a local `.env` file and use `uv run --locked --env-file .env streamvault`. Keep the token outside tracked files.
+The download needs internet access and reuses IDs already in the cache. JupyterLab reads the local cache and logs without a TMDB token.
 
-The fetch command reads [id_list.csv](id_list.csv), requests movie details with appended credits, and saves responses to `data/raw/movies.jsonl`. It records invalid, blank, duplicate, and missing inputs in `id_list_removals.csv`. When the command fetches titles, it saves the elapsed fetch time and the latest unresolved outcomes by ID in `data/raw/movies.acquisition.json`. Keep these files with the input CSV and cache for an exact rerun. The cache and logs stay local. Configuration, including the request limits and local paths, lives in [config.toml](config.toml).
+### Notebook guide
 
-Later fetches reuse cached IDs. To refresh them, archive the current cache, then move it out of the configured path before running the fetch command again. Notebook 04 filters the cache to the current candidate list. Use a separate cache and removal log when profiling or exploring a new list in notebooks 01–03, which read the whole cache.
+| Notebook | What it does |
+| --- | --- |
+| [01 · Prepare the data](notebooks/01_prep_movie_data.ipynb) | Turns the raw responses into tables, checks that joining tables keeps each film once, and accounts for source rows. |
+| [02 · Profile the data](notebooks/02_profile_movie_data.ipynb) | Checks for missing values, duplicates, unusual values, and types that need attention. |
+| [03 · Explore the data](notebooks/03_eda_movie_data.ipynb) | Explores patterns in ratings, box office, genres, franchises, and talent. |
+| [04 · Make the recommendation](notebooks/04_recommendation.ipynb) | Checks the current list, ranks both types of titles in both release windows, compares the results, reviews talent signals, and tests how the ranking responds to different scoring choices. |
 
-## Notebook order
+Each notebook reads the local inputs directly. Notebook 04 can run on its own once the inputs are ready. It filters the cache to IDs in the current candidate list. Use a separate cache and removal log for a different candidate list when running Notebooks 01–03, which read the whole cache.
 
-| Notebook | Purpose | Status |
-| --- | --- | --- |
-| [01 Prep](notebooks/01_prep_movie_data.ipynb) | Normalize responses, validate keys and joins, and reconcile each source row. | Runs against the local cache and removal log. |
-| [02 Profile](notebooks/02_profile_movie_data.ipynb) | Profile schema, duplicates, missingness, value ranges, and candidate data types. | Complete for the current snapshot. |
-| [03 EDA](notebooks/03_eda_movie_data.ipynb) | Explore numeric, genre, collection, and talent patterns and review plausible extremes. | Complete for the current snapshot. |
-| [04 Recommendation](notebooks/04_recommendation.ipynb) | Apply a fixed ranking method to both windows and produce shortlists and a deal note. | Candidate audit, ranking, comparisons, talent review, and scoring stress tests are complete. The memo and deal note follow. |
+### Inputs and outputs
 
-Run each analysis notebook from the top in its own kernel. The first three notebooks load their respective inputs directly from the configured local paths. The current snapshot reconciles **127 list rows to 112 distinct cached titles**, with 71 titles from 2000 onward. [Findings log](docs/findings.md)
+The paths below use the defaults in [config.toml](config.toml). A clean clone includes the candidate list. Supply the local lab brief separately if you need to read it. The download creates the cache and logs as needed.
 
-Save Notebook 04 and use **Run All** for comparable timings. It writes the four full candidate tables and `run.json` under `data/raw/movies.recommendation/`. The run record includes the input and code fingerprints, settings, counts, and seconds spent on each part of the cached analysis. The timer starts in the first code cell and stops after the candidate tables and file fingerprints are ready. The CLI measures fetching separately.
+| Path | What it contains |
+| --- | --- |
+| `data/raw/movies.jsonl` | Raw TMDB movie details and credits, one movie per line. |
+| `id_list_removals.csv` | Log of blank, invalid, duplicate, and missing entries. |
+| `data/raw/movies.acquisition.json` | Latest download timing and unresolved lookups by ID. Created when the download command makes requests. |
+| `data/raw/movies.recommendation/` | Four ranked candidate CSVs and `run.json`, which records which inputs, code, settings, and timings produced the results. The timing script adds `benchmark.json`. |
+| [docs/recommendation_exclusions.md](docs/recommendation_exclusions.md) | Notebook 04 updates this report with source rows left out and films that missed either shortlist. |
 
-To compare the current snapshot with 500 test titles, run the command below. It measures both sizes in separate Python processes and saves the per-stage timings and the 500-title estimate in `benchmark.json`. TMDB fetching and test-cache setup are outside the timing. Run Notebook 04 again to see the comparison table for the matching code and inputs.
+Git ignores `data/` and `id_list_removals.csv`. To repeat the same analysis, keep the input CSV, cache, and available logs together. For a fresh snapshot, archive the old cache and logs, then run the download with fresh paths or move the archived files out of the configured paths first.
+
+## How the code is organized
+
+| Path | Role |
+| --- | --- |
+| [src/streamvault/](src/streamvault/) | The Python package. It contains the download entry point and reusable code shared by the command, notebooks, and tests. |
+| [notebooks/](notebooks/) | The walkthroughs, charts, and analysis. Most of the ranking and recommendation rules live in Notebook 04 today. |
+| [scripts/](scripts/) | Commands for project maintenance. The benchmark here measures runtime using the current cache and 500 test titles. |
+| [tests/](tests/) | Automated tests for the Python package. |
+| [docs/](docs/) | The [findings](docs/findings.md), [questions](docs/questions.md), [decision notes](docs/DECISIONS.md), and exclusions report. |
+| `data/` | Local lab brief, raw downloads, and generated tables and run records. |
+| [config.toml](config.toml), [pyproject.toml](pyproject.toml), [uv.lock](uv.lock) | Settings for data paths and TMDB requests, the Python package and command, and the exact dependency versions. |
+
+Inside the package, [main.py](src/streamvault/main.py) is where the download command starts. It uses [load.py](src/streamvault/load.py) to read candidate IDs, [fetch_movies.py](src/streamvault/fetch_movies.py) to call TMDB, [cache.py](src/streamvault/cache.py) to read and save responses, and [removals.py](src/streamvault/removals.py) to log removals. [config.py](src/streamvault/config.py) reads the settings. [normalize.py](src/streamvault/normalize.py) turns raw responses into tables for the notebooks. [diagnostics.py](src/streamvault/diagnostics.py) runs checks supplied by its callers and reports or raises failures. [run_record.py](src/streamvault/run_record.py) helps the command, Notebook 04, and the benchmark keep track of their inputs and results.
+
+## Run tests and check speed
+
+Run the package tests from the repository root. With Docker, run the following command.
 
 ```sh
-uv run --locked python scripts/benchmark_recommendation.py
+docker run --rm --user "$(id -u):$(id -g)" \
+  --mount "type=bind,source=$PWD,target=/app" \
+  streamvault python -m unittest discover -s tests
 ```
 
-Run the package tests with this command.
+With local uv, run the following command.
 
 ```sh
 uv run --locked python -m unittest discover -s tests
 ```
 
-## Project records
+With a populated cache, run the timing script from the repository root. Use `python scripts/benchmark_recommendation.py` as the command in the Docker test example, or run it with local uv.
 
-- [Findings](docs/findings.md) ranks issues by decision risk and traces them to evidence and handling.
-- [Recommendation exclusions](docs/recommendation_exclusions.md) lists source rows left out before scoring and films that missed either shortlist. Notebook 04 updates it on each run.
-- [Questions](docs/questions.md) records answers drawn from the brief, completed analysis, and explicit analyst assumptions.
-- [Decisions](docs/DECISIONS.md) explains technical and analytical choices, the alternatives, and what is still open.
+```sh
+uv run --locked python scripts/benchmark_recommendation.py
+```
+
+It runs the cached recommendation in fresh Python processes for the current snapshot and for 500 test titles. The timer starts with the first code cell and ends after the candidate tables and file fingerprints are ready. TMDB requests and test-data setup happen outside that window. Run Notebook 04 again to see the timing comparison for matching inputs and code.
