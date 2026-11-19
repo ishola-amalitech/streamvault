@@ -130,6 +130,51 @@ Release-year plausibility limits are not currently enforced. They can be conside
 
 In the current local snapshot, the genre demonstration had 320 relationship rows matched to both references (no fan-out). The source coverage had 127 input rows: 118 rows linked to cached films and 9 with no cached film—5 recorded 404s, 3 invalid values, and 1 blank row. Six duplicate input rows were separately identified in the removal log and still link to their already-cached film. These counts describe the current files and will change as the input list/cache changes.
 
+### Duplicate and text-format review rules
+
+- **Exact duplicates:** the cache loader is keyed by the TMDB movie ID and the normalizer rejects duplicate IDs, so an exact duplicate is a pipeline-regression or source-cache anomaly rather than an expected TMDB issue. Profiling may count identical raw JSON lines or objects and exact duplicate normalized rows, but it must not delete or guess a winner.
+- **Key duplicates:** the normalizer rejects duplicate movie IDs and duplicate relationship or credit keys. Content associated with the same key requires a deliberate versioning rule before one record is kept.
+- **Semantic duplicates:** normalized title plus release year identifies review candidates only. Matching candidates can be remakes, legitimately repeated titles, or real duplicate records with different TMDB IDs. They are never removed automatically.
+- **Text placeholders:** blank, whitespace-only, placeholder-like, or unknown text is a warning until the affected field is required. Leading/trailing whitespace should be normalized or investigated, but spelling variants may have meaningful film or organization names.
+- **Repeated text:** repeated homepages, studio names, or collection names are normal for franchise relationships. Repetition is a warning or context, not proof of duplicate movies.
+- **URL and ID formats:** malformed required IDs are fail-fast errors. Optional malformed URLs or paths remain warnings unless they are needed by a join or published output.
+
+### Cross-table join review
+
+All bridge and reference relationships must be audited with left joins so unmatched IDs remain visible. Bridge/reference joins use `validate="many_to_one"` because many bridge rows may point to one reference row. Film, collection, and country joins use the same rule when the reference key is unique.
+
+The join audit checks:
+
+- the joined row count equals the input bridge count;
+- all required reference IDs resolve;
+- the relationship key remains unique;
+- unmatched IDs are reported rather than silently dropped.
+
+Reference failures are pipeline failures when a normalized table points to an ID that cannot exist in the reference table.
+
+### Value-range policy
+
+Range rules are documented and checked separately from missing-value checks.
+
+- **Invariant rules (fail-fast):** normalized IDs and keys must be valid; runtime, budget, revenue, popularity, and vote count must not be negative; and vote average must fall between 0 and 10. Invalid normalized release dates are rejected while loading or normalization.
+- **Missingness:** missing optional values are warnings and must be counted separately from a negative or impossible value. Zero values are reported because zero can mean unknown or an actual TMDB value, especially for budget and revenue.
+- **Descriptive rules (warnings):** observed minima and maxima are not treated as permanent domain limits. They are reported because they can identify outliers or reveal a cache snapshot bias.
+- **Proposed documentation:** release-date limits, runtime limits, financial limits, popularity limits, vote-count thresholds, and rating limits must be agreed before they become fail-fast rules. The deciding rule should include a rationale and the expected effect of future cache growth.
+
+The current snapshot observed these ranges:
+
+| Field | Observed minimum | Observed maximum | Current missing values |
+| --- | --- | --- | --- |
+| `release_date` | 1966-12-23 | 2019-06-19 | 0 |
+| `runtime` | 81 | 202 | 0 |
+| `budget` | 1,200,000 | 379,000,000 | 0 |
+| `revenue` | 7,390,108 | 2,942,649,778 | 0 |
+| `popularity` | 0.4583 | 89.1177 | 0 |
+| `vote_count` | 4,136 | 41,925 | 0 |
+| `vote_average` | 5.752 | 8.734 | 0 |
+
+These snapshot values describe the current local cache and are not permanent validation thresholds.
+
 ## 5. Business and operational limits still open
 
 - Temporary request failures are visible in command output but are not saved to a durable retry/failure history. The current removal log is local and is ignored by Git; decide later whether operational outcomes should be shared or retained for audit.
