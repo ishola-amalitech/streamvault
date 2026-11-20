@@ -3,23 +3,24 @@
 import asyncio
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 from time import perf_counter
 from typing import cast
 
 from streamvault.cache import match_cached_candidates, write_cached_records
-from streamvault.config import CONFIG
+from streamvault.config import CONFIG, AppConfig
 from streamvault.diagnostics import print_check_report, run_data_checks
 from streamvault.fetch_movies import FetchFailure, FetchMissing, MissingTokenError, fetch_movies
 from streamvault.load import MovieId
 from streamvault.recommendation_inputs import CandidateSnapshot, read_candidate_snapshot, recorded_lookup_reasons
-from streamvault.recommendation_run import run_recommendation
+from streamvault.recommendation_run import RecommendationRun, run_recommendation
 from streamvault.run_record import acquisition_record_path, fingerprint, read_record, snapshot_inputs, write_record
 
 
-async def _acquire_movies() -> CandidateSnapshot:
+async def _acquire_movies(config: AppConfig) -> CandidateSnapshot:
     """Download uncached candidates and keep a record of every attempted ID."""
     # Reading the list also logs blank, invalid, and duplicate entries.
-    snapshot = read_candidate_snapshot(CONFIG, log_removals=True)
+    snapshot = read_candidate_snapshot(config, log_removals=True)
     movie_ids = [row for row in snapshot.source_rows if isinstance(row, MovieId)]
     cache = snapshot.cache
     stage = "After loading"
@@ -41,11 +42,11 @@ async def _acquire_movies() -> CandidateSnapshot:
         # Time the fetch step before writing the cache and run report.
         fetch_start = perf_counter()
         try:
-            records, missing, failures = await fetch_movies(ids_to_fetch)
+            records, missing, failures = await fetch_movies(ids_to_fetch, config=config)
         except MissingTokenError:
             # A saved snapshot can be replayed if every unfetched ID already has an explanation.
-            acquisition = read_record(acquisition_record_path(CONFIG))
-            known = recorded_lookup_reasons(CONFIG, acquisition)
+            acquisition = read_record(acquisition_record_path(config))
+            known = recorded_lookup_reasons(config, acquisition)
             if any(movie.value not in known.index for movie in ids_to_fetch):
                 raise
             print(f"Using saved outcomes for {len(ids_to_fetch)} uncached IDs. Supply a TMDB token to retry them.")
@@ -72,14 +73,14 @@ async def _acquire_movies() -> CandidateSnapshot:
 
     # Confirm we are updating the files we loaded, including after a slow fetch.
     if fetch_seconds is not None or missing_timestamps:
-        snapshot.check_versions(snapshot_inputs(CONFIG))
+        snapshot.check_versions(snapshot_inputs(config))
     if records or missing_timestamps:
         saved_records = write_cached_records(
-            CONFIG.cache_file, [*cached_records.values(), *records]
+            config.cache_file, [*cached_records.values(), *records]
         )
         # Use the stored records, including timestamps, without decoding the cache again.
         snapshot.cache = match_cached_candidates(saved_records.items(), snapshot.source_rows)
-        snapshot.cache_sha256 = fingerprint(CONFIG.cache_file)
+        snapshot.cache_sha256 = fingerprint(config.cache_file)
     if missing_timestamps:
         print(f"Added cache timestamps to existing records: {missing_timestamps}")
 
@@ -89,7 +90,7 @@ async def _acquire_movies() -> CandidateSnapshot:
     # Keep the previous download report if this run used only cached movies.
     if fetch_seconds is not None:
         recorded_at = datetime.now(timezone.utc).isoformat()
-        record_path = acquisition_record_path(CONFIG)
+        record_path = acquisition_record_path(config)
         saved_unresolved: object = read_record(record_path).get("unresolved_by_id", {})
         if not isinstance(saved_unresolved, dict):
             raise ValueError(f"Expected an object for 'unresolved_by_id' in {record_path}.")
@@ -114,10 +115,10 @@ async def _acquire_movies() -> CandidateSnapshot:
                 "recorded_at_utc": recorded_at,
             }
         write_record(
-            CONFIG.acquisition_file,
+            config.acquisition_file,
             {
                 "recorded_at_utc": recorded_at,
-                "input_sha256": snapshot_inputs(CONFIG),
+                "input_sha256": snapshot_inputs(config),
                 "fetch_seconds": fetch_seconds,
                 "requested": len(ids_to_fetch),
                 "fetched": len(records),
@@ -140,11 +141,16 @@ async def _acquire_movies() -> CandidateSnapshot:
     return snapshot
 
 
-async def run() -> None:
+async def run(
+    config: AppConfig | None = None, *, output_dir: Path | None = None,
+) -> RecommendationRun:
     """Bring the cache up to date, then run the analysis on the saved inputs."""
-    snapshot = await _acquire_movies()
+    if config is None:
+        config = CONFIG
+    snapshot = await _acquire_movies(config)
     # The notebook calls the same function and lets it load the saved candidate snapshot.
-    analysis = run_recommendation(CONFIG, snapshot=snapshot, output_dir=CONFIG.output_dir)
+    # The app saves download files separately while keeping the shared acquisition history.
+    analysis = run_recommendation(config, snapshot=snapshot, output_dir=output_dir or config.output_dir)
     print_check_report("Recommendation input checks", analysis.inputs.checks)
     print()
     print(analysis.summary, end="")
@@ -152,6 +158,7 @@ async def run() -> None:
     print(f"Exclusions report: {analysis.exclusions_path}")
     print(f"Film issues: {analysis.quality_path}")
     print(f"Run record: {analysis.directory / 'run.json'}")
+    return analysis
 
 
 def main() -> None:

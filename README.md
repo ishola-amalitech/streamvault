@@ -57,6 +57,27 @@ Update `id_list.csv` when Adjoa receives a new candidate list. Run the full pipe
 uv run streamvault
 ```
 
+### Upload a list in the browser
+
+Use the upload page to run the same pipeline on a CSV with one column named `tmdb_id`. After the local uv setup above, run this from the repository root.
+
+```sh
+uv run --locked --extra app streamlit run app.py --server.address 127.0.0.1
+```
+
+If you use Docker, rebuild the image with `docker build -t streamvault .`, then run it as follows.
+
+```sh
+docker run --rm --user "$(id -u):$(id -g)" \
+  --mount "type=bind,source=$PWD,target=/app" \
+  --env-file .env --publish 127.0.0.1:8501:8501 \
+  streamvault streamlit run app.py --server.address 0.0.0.0
+```
+
+Open `http://localhost:8501`, upload the CSV, then click **Run recommendation**. The page shows the results for both release windows. **Download reports** saves a ZIP with the original upload, the recommendation, both sets of shortlists, the exclusions and quality reports, the run record, and supporting tables. It also includes a row removal log when there are rows to log. Download the ZIP before closing the page or switching to another list.
+
+The app reuses the local movie cache and saved lookup outcomes. New IDs need the same TMDB token as the command line. The app keeps the project candidate CSV and the CLI recommendation reports in place. It can update the shared movie cache and acquisition history in `out/`, so let an app run finish before starting a CLI run. The run record in the ZIP includes the acquisition counts and timing when this upload fetched data. [App entry point](app.py)
+
 ### Pipeline outputs
 
 | Default path | What to look for |

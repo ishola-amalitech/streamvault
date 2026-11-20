@@ -31,10 +31,9 @@ class FetchMoviesTests(unittest.IsolatedAsyncioTestCase):
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(respond), base_url=CONFIG.api_base_url
         ) as client:
-            with patch("streamvault.fetch_movies.CONFIG", settings):
-                records, missing, failures = await asyncio.wait_for(
-                    _fetch_movies_with_client(movie_ids, client), timeout=5
-                )
+            records, missing, failures = await asyncio.wait_for(
+                _fetch_movies_with_client(movie_ids, client, settings), timeout=5
+            )
 
         self.assertEqual(records, [{"id": 1}, {"id": 2}])
         self.assertEqual(
@@ -61,19 +60,17 @@ class FetchMoviesTests(unittest.IsolatedAsyncioTestCase):
                 return_value=client_context,
             ),
             patch("streamvault.fetch_movies.append_removals") as append_removals,
-            patch(
-                "streamvault.fetch_movies.CONFIG",
-                replace(CONFIG, requests_per_second=100.0),
-            ),
         ):
             records, missing, failures = await fetch_movies(
-                [MovieId("155", 2), MovieId("165", 3)]
+                [MovieId("155", 2), MovieId("165", 3)],
+                config=replace(CONFIG, requests_per_second=100.0, source_file=CONFIG.source_file.with_name("upload.csv")),
             )
 
         self.assertEqual(records, [])
         self.assertEqual([item.movie_id for item in missing], ["155", "165"])
         self.assertEqual(failures, [])
         removals = list(append_removals.call_args.args[1])
+        self.assertEqual([item.source_file for item in removals], ["upload.csv", "upload.csv"])
         self.assertEqual([item.source_line for item in removals], [2, 3])
         self.assertTrue(all("HTTP 404" in item.reason for item in removals))
 

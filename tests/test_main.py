@@ -192,17 +192,17 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                 movies[key - 1]["belongs_to_collection"] = {"id": key, "name": f"Bundle {key}"}
             movies[-1]["belongs_to_collection"] = movies[0]["belongs_to_collection"]
 
-            with (
-                patch("streamvault.main.CONFIG", config),
-                patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch,
-            ):
+            folder = root / "upload-reports"
+            with patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch:
                 fetch.return_value = (
                     movies, [FetchMissing("900", 13, "TMDB returned HTTP 404.")],
                     [FetchFailure("901", "HTTP 503")],
                 )
-                await run()
+                analysis = await run(config, output_dir=folder)
 
-            folder = config.output_dir
+            self.assertEqual(analysis.directory, folder)
+            self.assertTrue(config.acquisition_file.is_file())
+            self.assertFalse((config.output_dir / "run.json").exists())
             record = read_record(folder / "run.json")
             self.assertEqual(record["source_rows"], len(ids))
             self.assertEqual(record["source_outcomes"]["Cached"], 11)
@@ -216,7 +216,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(analysis_csvs), 12)
             self.assertEqual({path.name for path in folder.glob("*.csv")}, set(analysis_csvs) | {"movies.quality.csv"})
             self.assertIn("The ratings conclusion changes", (folder / "recommendation.md").read_text())
-            exclusions = (config.output_dir / "recommendation_exclusions.md").read_text()
+            exclusions = (folder / "recommendation_exclusions.md").read_text()
             self.assertIn("TMDB request failed: HTTP 503", exclusions)
             self.assertIn("Duplicate TMDB movie ID", exclusions)
             self.assertIn("Before 1 January 2000", exclusions)
