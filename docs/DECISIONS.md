@@ -49,6 +49,8 @@ Notebook 03 keeps numeric correlations and the unusual-value sensitivity compari
 
 ### D04 · Keep the canonical types and measure runtime separately
 
+The benchmark guide records the measurements, timing limits, and rerun commands. [Benchmark guide](benchmarks.md)
+
 Notebook 02's copy-only experiment cut the 112-film movie table by 10.6%. The first 500-title attempt exposed a problem with narrowing IDs. The talent analysis fills blank collection IDs with standalone movie IDs to build film groups. Even when every collection ID fits the smaller type, movie IDs can exceed it. The measured compact version kept both ID columns at their original sizes. It stored repeated release status and language labels once per label, and chose smaller integer types for budget, gross, runtime, and votes only when the values fit. [Profile](../notebooks/02_profile_movie_data.ipynb) · [Memory benchmark](../scripts/benchmark_movie_types.py)
 
 | Measure | Original types | Compact types |

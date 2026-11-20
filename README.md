@@ -144,8 +144,6 @@ docker run --rm -it --user "$(id -u):$(id -g)" \
   --publish 127.0.0.1:8888:8888 streamvault
 ```
 
-The [benchmark script](scripts/benchmark_recommendation.py) measures the pipeline's cached analysis on the saved snapshot and 500 test titles, with TMDB requests and test-data setup outside the timer. It writes `out/benchmark.json`. With a populated cache, run `uv run --locked python scripts/benchmark_recommendation.py`, or use `python scripts/benchmark_recommendation.py` in the Docker test command above.
-
-To compare the original movie-table types with smaller types on the same 500 test titles, run `uv run --locked python scripts/benchmark_movie_types.py` on Linux or macOS. In Docker, use `python scripts/benchmark_movie_types.py` in the test command above. The script checks that both versions produce the same results and saves three runs per version in `out/movie_types_benchmark.json`. [Memory decision](docs/DECISIONS.md#d04--keep-the-canonical-types-and-measure-runtime-separately)
+The cached runtime and memory benchmarks use 500 test titles. The benchmark guide explains what the scripts time, where to find their reports, and how to rerun them with uv or Docker. [Benchmark guide](docs/benchmarks.md)
 
 See the [findings](docs/findings.md), [questions](docs/questions.md), and [decision notes](docs/DECISIONS.md) for the evidence and choices behind the work.
