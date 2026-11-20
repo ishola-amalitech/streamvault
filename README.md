@@ -2,6 +2,8 @@
 
 StreamVault is a lab about a fictional $14M film licensing decision. Run **`uv run streamvault`** to fetch missing data, validate it, and get the recommendation and reports for both release windows. The analysis compares all years with films released from 1 January 2000 onward. [Lab brief](lab_brief.md)
 
+The one-page memo summarizes the decision for Kwame, including the shortlist for each release window and the relative deal priority for the strongest bundle. [Client memo and deal note](docs/client_memo.md)
+
 ## The pipeline
 
 **Start in `src/streamvault/main.py`.** This file starts the end-to-end command. Acquisition saves TMDB outcomes, then the shared recommendation step reads the saved inputs, validates the movies, and writes the decision and evidence. [Pipeline entry point](src/streamvault/main.py) · [Recommendation notebook](notebooks/04_recommendation.ipynb)
@@ -111,7 +113,7 @@ The notebooks already share code for turning raw responses into tables and runni
 
 The pipeline and all four notebooks use the same candidate matching rules. They match the valid IDs in the current CSV to the saved TMDB records and stop if a current candidate has multiple cache entries. Older films can stay in the cache for future reuse. Notebook 02 labels its whole-cache raw duplicate audit separately.
 
-Open Notebook 04 and choose **Run All** to review the same analysis on the saved inputs. The notebook and CLI share the candidate loader, analysis, and report writer. The notebook saves its copies under `data/raw/movies.recommendation/`, writes `data/raw/movies.quality.csv`, and updates its [exclusions report](docs/recommendation_exclusions.md). The one-page client memo and deal note are pending.
+Open Notebook 04 and choose **Run All** to review the same analysis on the saved inputs. The notebook and CLI share the candidate loader, analysis, and report writer. The notebook saves its copies under `data/raw/movies.recommendation/`, writes `data/raw/movies.quality.csv`, and updates its [exclusions report](docs/recommendation_exclusions.md).
 
 To open JupyterLab with Docker, use the image built above and open the link printed in the terminal. With local uv, run `uv run --locked jupyter lab`.
 

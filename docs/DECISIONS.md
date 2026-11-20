@@ -101,7 +101,7 @@ Apply the three-film and two-group minimum to each benchmarked outcome. Remove t
 
 ### D09 · Give relative deal priority and name the supporting metric
 
-The candidate CSVs show reported gross minus production budget and that difference divided by budget for positive inputs. These are historical box-office measures. The deal note and one-page memo are pending. Use the strongest eligible lab package, its main KPI, the number of films behind it, and the release window. Compare it with the runner-up bundle and strongest standalone. An exact offer would require a relationship between platform outcomes, package costs and licensing terms that the provided data cannot establish. [Brief](../lab_brief.md) · [Recommendation notebook](../notebooks/04_recommendation.ipynb)
+The candidate CSVs show reported gross minus production budget and that difference divided by budget for positive inputs. These are historical box-office measures. The memo gives The Godfather the first bundle quote across all years. Its middle score of 8.47 across three films is only 0.07 points above The Lord of the Rings, so the deal note gives little weight to that lead in pricing and prioritizes The Shawshank Redemption at comparable prices. If Finance uses 2000 onward, The Lord of the Rings becomes the first bundle call. An exact offer would require evidence about viewing outcomes, package costs, and licensing terms. [Client memo and deal note](client_memo.md) · [Recommendation notebook](../notebooks/04_recommendation.ipynb)
 
 ### D10 · Make quarterly reruns explainable
 
