@@ -20,3 +20,10 @@ id_list_removals.csv
 dist
 build
 .DS_Store
+
+# Local agent configuration and credentials do not belong in the build context.
+.agents
+.codex
+.aws
+AGENTS.md
+agent.md

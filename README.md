@@ -31,7 +31,7 @@ Choose **one** option. Start with the hosted browser app for a regular licensing
 | Option | When to use it | What you need |
 | --- | --- | --- |
 | [1. Hosted browser app](#upload-a-list-in-the-browser) | Run or compare reviews without installing anything. | A browser and your candidate CSV or two saved report ZIPs. |
-| [2. Docker](#docker) | Run the analysis on your computer. Docker sets up Python and uv inside the image. | Docker and the [computer setup](#before-running-on-your-computer). |
+| [2. Docker](#docker) | Run the analysis on your computer. Docker sets up Python and uv inside the image. Build the notebook image only if you need JupyterLab. | Docker and the [computer setup](#before-running-on-your-computer). |
 | [3. Local uv](#local-uv) | Run the analysis directly from your computer's terminal. | uv and the [computer setup](#before-running-on-your-computer). |
 
 ### Upload a list in the browser
@@ -240,12 +240,13 @@ The pipeline and all four notebooks use the same candidate matching rules. They 
 
 Run the pipeline on your computer first so the saved movie data is available. Then open Notebook 04 and choose **Run All**. See the [output table](#pipeline-outputs) for where it saves each file.
 
-To open JupyterLab with Docker, use the image built above and open the link printed in the terminal. With local uv, run `uv run --locked jupyter lab`.
+The main Docker image runs the pipeline, browser app, tests, and benchmarks. To use JupyterLab, build the notebook image and open the link printed in the terminal. With local uv, run `uv run --locked jupyter lab`.
 
 ```sh
+docker build --target notebooks -t streamvault-notebooks .
 docker run --rm -it --user "$(id -u):$(id -g)" \
   --mount "type=bind,source=$PWD,target=/app" \
-  --publish 127.0.0.1:8888:8888 streamvault
+  --publish 127.0.0.1:8888:8888 streamvault-notebooks
 ```
 
 For a new architecture decision, use the next numbered file and follow the existing ADR format. If a decision changes, record it in a new ADR that links to the one it replaces.
