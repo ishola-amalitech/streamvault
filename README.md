@@ -1,10 +1,10 @@
 # StreamVault
 
-StreamVault is a lab about a fictional $14M film licensing decision. The pipeline gathers the movie data used to compare franchise bundles with standalone films. The analysis considers all release years and a second window starting on 1 January 2000. [Lab brief, supplied separately](data/lab_brief.md)
+StreamVault is a lab about a fictional $14M film licensing decision. Run **`uv run streamvault`** to fetch missing data, validate it, and get the recommendation and reports for both release windows. The analysis compares all years with films released from 1 January 2000 onward. [Lab brief](lab_brief.md)
 
 ## The pipeline
 
-**Start in `src/streamvault/main.py`.** The `streamvault` command runs this file, which coordinates the steps below. The pipeline fetches and caches TMDB responses, then turns the resolved candidates into tables and validates them. [Pipeline entry point](src/streamvault/main.py)
+**Start in `src/streamvault/main.py`.** This file starts the end-to-end command. Acquisition saves TMDB outcomes, then the shared recommendation step reads the saved inputs, validates the movies, and writes the decision and evidence. [Pipeline entry point](src/streamvault/main.py) · [Recommendation notebook](notebooks/04_recommendation.ipynb)
 
 | Step | What happens | Code |
 | --- | --- | --- |
@@ -13,8 +13,10 @@ StreamVault is a lab about a fictional $14M film licensing decision. The pipelin
 | Fetch the missing movies | Request movie details and credits from TMDB, limit request speed, and retry temporary failures. Report whether every requested ID has one outcome before saving new responses. | [fetch_movies.py](src/streamvault/fetch_movies.py) |
 | Save and report | Add successful responses to the local cache. Record the fetch time and unresolved IDs when the pipeline makes requests, then print a summary. | [cache.py](src/streamvault/cache.py), [run_record.py](src/streamvault/run_record.py) |
 | Normalize and validate | Build the tables in memory. Check candidate IDs, collection joins, and genre and talent links. Stop on structural failures. Save film-level review issues beside the cache using the same budget and gross rules as Notebooks 03 and 04. | [normalize.py](src/streamvault/normalize.py), [diagnostics.py](src/streamvault/diagnostics.py), [movie_quality.py](src/streamvault/movie_quality.py) |
+| Recommend | Account for every source row and select both release windows. Rank up to three bundles and five standalones per window. Compare all eligible options and review talent and scoring alternatives. | [recommendation_inputs.py](src/streamvault/recommendation_inputs.py), [recommendation_analysis.py](src/streamvault/recommendation_analysis.py), [recommendation_talent.py](src/streamvault/recommendation_talent.py) |
+| Publish | Print the recommendation and save the quality, exclusions, candidate, and detail reports with a record of the run. | [recommendation_run.py](src/streamvault/recommendation_run.py), [recommendation_reports.py](src/streamvault/recommendation_reports.py) |
 
-The [candidate list](id_list.csv) is included in the checkout. [config.toml](config.toml) sets the file paths, request limits, timeouts, and retry settings.
+The [candidate list](id_list.csv) is included in the checkout. [config.toml](config.toml) sets the input paths, the CLI report folder (`out/` by default), request limits, timeouts, and retry settings.
 
 ## Run the pipeline
 
@@ -39,28 +41,44 @@ In the second command, the first `streamvault` names the image and the second ru
 
 ### Local uv
 
-Install [uv](https://docs.astral.sh/uv/) and run the same pipeline directly on your laptop.
+Install [uv](https://docs.astral.sh/uv/) and set up the project from the repository root. In Bash, set `UV_ENV_FILE` in the terminal Adjoa will use so uv loads the local token file.
 
 ```sh
 uv python install 3.14
 uv sync --locked
-uv run --locked --env-file .env streamvault
+export UV_ENV_FILE=.env
+```
+
+Update `id_list.csv` when Adjoa receives a new candidate list. Run the full pipeline from the project root.
+
+```sh
+uv run streamvault
 ```
 
 ### Pipeline outputs
 
 | Default path | What to look for |
 | --- | --- |
-| `data/raw/movies.jsonl` | Raw movie details and credits, one movie per line. |
-| `id_list_removals.csv` | Source line and reason for each logged blank, invalid ID, duplicate ID, or TMDB lookup miss. |
-| `data/raw/movies.acquisition.json` | The latest fetch timing and counts, plus the last known outcome for each unresolved ID. |
-| `data/raw/movies.quality.csv` | Affected movie IDs, film titles, release years when available, and the effect of each issue. A report with only column headers means no films were flagged. |
+| `out/movies.acquisition.json` | The latest fetch timing and counts, plus the last known outcome for each unresolved ID. The command writes this report when it makes requests. |
+| `out/movies.quality.csv` | Affected movie IDs, film titles, release years when available, and the effect of each issue. A header-only report means no films were flagged. |
+| `out/recommendation_exclusions.md` | What happened to each candidate row and why films missed either shortlist. |
 
-A repeat run reuses saved entries and tries uncached IDs again. Git ignores the cache and logs. Keep them together with the candidate CSV to reproduce a snapshot. To start a new snapshot, archive the existing cache and logs and use fresh output paths.
+The raw cache (`data/raw/movies.jsonl`) and removal log (`id_list_removals.csv`) are working files shared with the notebooks. A repeat run reuses saved entries. With a TMDB token, it retries uncached IDs. Without a token, it can replay a saved list when every uncached ID has a recorded outcome. Keep the candidate CSV, cache, removal log, and any acquisition record together to reproduce a snapshot. Git ignores these local records and the reports in `out/`.
+
+The recommendation and supporting files also go in `out/`.
+
+| Saved files | What they show |
+| --- | --- |
+| `all_years_bundles.csv`, `all_years_standalones.csv`, `2000_onward_bundles.csv`, `2000_onward_standalones.csv` | All candidate options, with ranks where eligible and reasons for inclusion or exclusion. Filter `outcome` to `Shortlisted` for the picks. In the standalone files, `raw_gross` is the source value and `reported_gross` is the usable amount. |
+| `shortlisted_bundle_films.csv`, `bundle_best_film_omission.csv` | Scores and financial evidence for the individual films behind each shortlisted bundle, plus the film removed from each eligible bundle in the strongest-film test. |
+| `talent_detail.csv`, `genre_*.csv` | Credit counts, model comparisons, genre overlap, and the evidence behind each talent signal. |
+| `shortlist_changes.csv`, `scoring_sensitivity.csv` | Which options entered, left, or moved and what happened to the ratings decision when the date window or scoring rule changed. |
+| `recommendation.md` | The decision, shortlists with reasons, talent signals, and main evidence limits. The command also prints this summary. |
+| `run.json` | Input and output fingerprints, analysis settings, check results, and separate fetch and analysis timings. |
 
 ### Review the evidence before using the shortlists
 
-After running Notebook 04, open the sections **Film data issues to review** and **Evidence left for Adjoa**. The first lists individual film issues. The second shows how many bundles and standalones qualify in each release window and how many shortlist spots are unfilled. [Exclusions report](docs/recommendation_exclusions.md)
+In `out/recommendation_exclusions.md`, open **Film data issues to review** and **Evidence left for Adjoa**. The first lists individual film issues. The second shows how many bundles and standalones qualify in each release window and how many shortlist spots are unfilled.
 
 - **Missing or invalid data.** A film without a usable release date stays out of both windows. A dated, released film with unusable rating inputs stays unscored and can make its bundle ineligible. For financial summaries, keep each positive, finite dollar amount. Missing, zero, or invalid budget affects only calculations that need budget. For example, a film with valid gross and a zero budget still counts toward median gross. Gross less budget needs both amounts.
 - **Provisional.** Compare the flagged TMDB records before relying on that window’s shortlist or ratings preference. A shared title and year calls for review, and both movie IDs stay visible.
@@ -68,7 +86,7 @@ After running Notebook 04, open the sections **Film data issues to review** and 
 
 ## Test the pipeline
 
-The tests cover candidate IDs, the cache, the removal log, fetch outcomes, and normalization. They also check that the pipeline stops on duplicate cache entries, unexpected fetch results, or changed movie IDs. They also verify that rating gaps and possible duplicate films are reported while the run continues. They use simulated TMDB responses and run without an API token.
+The tests cover candidate IDs, the cache, the removal log, fetch outcomes, normalization, and recommendation rules. They check that the pipeline stops on duplicate cache entries, unexpected fetch results, or changed movie IDs and reports rating gaps and possible duplicate films while the run continues. Recommendation tests cover ranking ties, thin evidence, and the difference between source gross and usable gross. The tests run without an API token.
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" \
@@ -80,7 +98,7 @@ With local uv, run `uv run --locked python -m unittest discover -s tests`.
 
 ## How the notebooks informed the work
 
-The notebooks show the checks and experiments behind the pipeline design and the recommendation. Notebook 01 shows the preparation and join checks that informed the pipeline's normalization stage. The recommendation analysis still runs in Notebook 04.
+The notebooks show the checks and experiments behind the pipeline design and the recommendation. Notebook 01 shows the preparation and join checks that informed the pipeline's normalization stage. Notebook 04 presents the same recommendation and reports as the command using the saved inputs. [Scoring and comparison](src/streamvault/recommendation.py) · [Talent analysis](src/streamvault/recommendation_talent.py) · [Report preparation](src/streamvault/recommendation_reports.py)
 
 | Notebook | What it contributed |
 | --- | --- |
@@ -91,7 +109,9 @@ The notebooks show the checks and experiments behind the pipeline design and the
 
 The notebooks already share code for turning raw responses into tables and running data checks. [normalize.py](src/streamvault/normalize.py) · [diagnostics.py](src/streamvault/diagnostics.py)
 
-The pipeline and all four notebooks use the same candidate matching rules. They match the valid IDs in the current CSV to the saved TMDB records and stop if a current candidate has multiple cache entries. Older films can stay in the cache for future reuse. Notebook 02 labels its whole-cache raw duplicate audit separately. For a fresh analysis, open Notebook 04 in a fresh kernel and choose **Run All**. It writes the ranked CSVs and analysis run record under `data/raw/movies.recommendation/` and updates the [exclusions report](docs/recommendation_exclusions.md). The one-page memo and deal note are pending.
+The pipeline and all four notebooks use the same candidate matching rules. They match the valid IDs in the current CSV to the saved TMDB records and stop if a current candidate has multiple cache entries. Older films can stay in the cache for future reuse. Notebook 02 labels its whole-cache raw duplicate audit separately.
+
+Open Notebook 04 and choose **Run All** to review the same analysis on the saved inputs. The notebook and CLI share the candidate loader, analysis, and report writer. The notebook saves its copies under `data/raw/movies.recommendation/`, writes `data/raw/movies.quality.csv`, and updates its [exclusions report](docs/recommendation_exclusions.md). The one-page client memo and deal note are pending.
 
 To open JupyterLab with Docker, use the image built above and open the link printed in the terminal. With local uv, run `uv run --locked jupyter lab`.
 
@@ -101,6 +121,8 @@ docker run --rm -it --user "$(id -u):$(id -g)" \
   --publish 127.0.0.1:8888:8888 streamvault
 ```
 
-The [benchmark script](scripts/benchmark_recommendation.py) measures the current notebook analysis against the cached snapshot and 500 test titles, with TMDB requests and test-data setup outside the timer. With a populated cache, run `uv run --locked python scripts/benchmark_recommendation.py`, or use `python scripts/benchmark_recommendation.py` in the Docker test command above.
+The [benchmark script](scripts/benchmark_recommendation.py) measures the pipeline's cached analysis on the saved snapshot and 500 test titles, with TMDB requests and test-data setup outside the timer. It writes `out/benchmark.json`. With a populated cache, run `uv run --locked python scripts/benchmark_recommendation.py`, or use `python scripts/benchmark_recommendation.py` in the Docker test command above.
+
+To compare the original movie-table types with smaller types on the same 500 test titles, run `uv run --locked python scripts/benchmark_movie_types.py` on Linux or macOS. In Docker, use `python scripts/benchmark_movie_types.py` in the test command above. The script checks that both versions produce the same results and saves three runs per version in `out/movie_types_benchmark.json`. [Memory decision](docs/DECISIONS.md#d04--keep-the-canonical-types-and-measure-runtime-separately)
 
 See the [findings](docs/findings.md), [questions](docs/questions.md), and [decision notes](docs/DECISIONS.md) for the evidence and choices behind the work.

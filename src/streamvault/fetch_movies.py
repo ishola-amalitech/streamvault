@@ -198,6 +198,10 @@ async def _fetch_movies_with_client(
     return records, missing, failures
 
 
+class MissingTokenError(OSError):
+    """A download requires a TMDB read access token."""
+
+
 async def fetch_movies(
     movie_ids: Iterable[MovieId],
 ) -> tuple[list[dict[str, object]], list[FetchMissing], list[FetchFailure]]:
@@ -212,7 +216,7 @@ async def fetch_movies(
 
     read_token = os.getenv(CONFIG.token_env_var)
     if not read_token:
-        raise EnvironmentError(
+        raise MissingTokenError(
             f"{CONFIG.token_env_var} environment variable is not set."
         )
 

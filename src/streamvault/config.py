@@ -22,6 +22,11 @@ class AppConfig:
     source_file: Path
     cache_file: Path
     removals_file: Path
+    output_dir: Path
+
+    @property
+    def acquisition_file(self) -> Path:
+        return self.output_dir / f"{self.cache_file.stem}.acquisition.json"
 
 
 def _section(config: Mapping[str, object], name: str) -> Mapping[str, object]:
@@ -131,6 +136,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         source_file=(project_root / _text(paths, "source_file")).resolve(),
         cache_file=(project_root / _text(paths, "cache_file")).resolve(),
         removals_file=(project_root / _text(paths, "removals_file")).resolve(),
+        output_dir=(project_root / _text({"output_dir": "out"} | paths, "output_dir")).resolve(),
     )
 
 

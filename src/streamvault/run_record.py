@@ -32,6 +32,13 @@ def snapshot_inputs(config: AppConfig) -> dict[str, str | None]:
     }
 
 
+def acquisition_record_path(config: AppConfig) -> Path:
+    """Read new fetch reports or replay a snapshot saved before the move to out/."""
+    if config.acquisition_file.is_file():
+        return config.acquisition_file
+    return config.cache_file.with_suffix(".acquisition.json")
+
+
 def read_record(path: Path) -> dict[str, Any]:
     """Read a JSON report. Its fields depend on which report was saved."""
     try:

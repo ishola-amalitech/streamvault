@@ -16,3 +16,4 @@ backoff_multiplier = 2.0
 source_file = "id_list.csv"
 cache_file = "data/raw/movies.jsonl"
 removals_file = "id_list_removals.csv"
+output_dir = "out"

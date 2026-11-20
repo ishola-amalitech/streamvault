@@ -12,6 +12,7 @@ wheels/
 htmlcov/
 id_list_removals.csv
 /data/
+/out/
 /AGENTS.md
 /agent.md
 

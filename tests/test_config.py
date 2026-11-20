@@ -17,6 +17,7 @@ class AppConfigTests(unittest.TestCase):
         self.assertEqual(
             CONFIG.removals_file, project_root / "id_list_removals.csv"
         )
+        self.assertEqual(CONFIG.output_dir, project_root / "out")
 
     def test_missing_config_section_fails_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

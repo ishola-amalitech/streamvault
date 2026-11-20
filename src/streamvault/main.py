@@ -1,4 +1,4 @@
-"""Run the StreamVault pipeline from the candidate CSV through normalization."""
+"""Run the StreamVault pipeline from the candidate CSV through the recommendation."""
 
 import asyncio
 from collections import Counter
@@ -6,21 +6,22 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import cast
 
-from streamvault.cache import iter_cached_records, match_cached_candidates, write_cached_records
+from streamvault.cache import match_cached_candidates, write_cached_records
 from streamvault.config import CONFIG
 from streamvault.diagnostics import print_check_report, run_data_checks
-from streamvault.fetch_movies import FetchFailure, FetchMissing, fetch_movies
-from streamvault.load import iter_movie_ids
-from streamvault.movie_quality import film_quality_issues
-from streamvault.normalize import normalization_checks, normalize_movie_records
-from streamvault.run_record import read_record, snapshot_inputs, write_record, write_text_atomic
+from streamvault.fetch_movies import FetchFailure, FetchMissing, MissingTokenError, fetch_movies
+from streamvault.load import MovieId
+from streamvault.recommendation_inputs import CandidateSnapshot, read_candidate_snapshot, recorded_lookup_reasons
+from streamvault.recommendation_run import run_recommendation
+from streamvault.run_record import acquisition_record_path, fingerprint, read_record, snapshot_inputs, write_record
 
 
-async def run() -> None:
-    """Download missing titles, update the cache, and validate the movie tables."""
+async def _acquire_movies() -> CandidateSnapshot:
+    """Download uncached candidates and keep a record of every attempted ID."""
     # Reading the list also logs blank, invalid, and duplicate entries.
-    movie_ids = list(iter_movie_ids(CONFIG.source_file, CONFIG.removals_file))
-    cache = match_cached_candidates(iter_cached_records(CONFIG.cache_file), movie_ids)
+    snapshot = read_candidate_snapshot(CONFIG, log_removals=True)
+    movie_ids = [row for row in snapshot.source_rows if isinstance(row, MovieId)]
+    cache = snapshot.cache
     stage = "After loading"
     print_check_report(stage, run_data_checks(stage, {
         "Current candidate IDs are unique in the cache": cache.uniqueness_check(),
@@ -35,38 +36,50 @@ async def run() -> None:
     records: list[dict[str, object]] = []
     missing: list[FetchMissing] = []
     failures: list[FetchFailure] = []
-    fetched_records: dict[str, dict[str, object]] = {}
     fetch_seconds: float | None = None
     if ids_to_fetch:
         # Time the fetch step before writing the cache and run report.
         fetch_start = perf_counter()
-        records, missing, failures = await fetch_movies(ids_to_fetch)
-        fetch_seconds = perf_counter() - fetch_start
-        # Check the results before caching them. A miss or a failed request still accounts for an ID.
-        returned_ids = [str(record.get("id")).lstrip("0") for record in records]
-        outcomes = Counter(returned_ids)
-        outcomes.update(item.movie_id for item in missing)
-        outcomes.update(item.movie_id for item in failures)
-        requested = {movie.value for movie in ids_to_fetch}
-        missing_ids = sorted(requested - outcomes.keys())
-        extra_ids = sorted(outcomes.keys() - requested)
-        repeated_ids = sorted(key for key, count in outcomes.items() if count > 1)
-        stage = "After fetching"
-        print_check_report(stage, run_data_checks(stage, {
-            "Each requested ID has exactly one outcome": (
-                not (missing_ids or extra_ids or repeated_ids),
-                f"{len(requested)} requested, {outcomes.total()} outcomes. "
-                f"Missing: {missing_ids[:5]}. Unexpected: {extra_ids[:5]}. "
-                f"Repeated: {repeated_ids[:5]}.",
-            ),
-        }))
-        fetched_records = dict(zip(returned_ids, records, strict=True))
+        try:
+            records, missing, failures = await fetch_movies(ids_to_fetch)
+        except MissingTokenError:
+            # A saved snapshot can be replayed if every unfetched ID already has an explanation.
+            acquisition = read_record(acquisition_record_path(CONFIG))
+            known = recorded_lookup_reasons(CONFIG, acquisition)
+            if any(movie.value not in known.index for movie in ids_to_fetch):
+                raise
+            print(f"Using saved outcomes for {len(ids_to_fetch)} uncached IDs. Supply a TMDB token to retry them.")
+        else:
+            fetch_seconds = perf_counter() - fetch_start
+            # Check the results before caching them. A miss or a failed request still accounts for an ID.
+            returned_ids = [str(record.get("id")).lstrip("0") for record in records]
+            outcomes = Counter(returned_ids)
+            outcomes.update(item.movie_id for item in missing)
+            outcomes.update(item.movie_id for item in failures)
+            requested = {movie.value for movie in ids_to_fetch}
+            missing_ids = sorted(requested - outcomes.keys())
+            extra_ids = sorted(outcomes.keys() - requested)
+            repeated_ids = sorted(key for key, count in outcomes.items() if count > 1)
+            stage = "After fetching"
+            print_check_report(stage, run_data_checks(stage, {
+                "Each requested ID has exactly one outcome": (
+                    not (missing_ids or extra_ids or repeated_ids),
+                    f"{len(requested)} requested, {outcomes.total()} outcomes. "
+                    f"Missing: {missing_ids[:5]}. Unexpected: {extra_ids[:5]}. "
+                    f"Repeated: {repeated_ids[:5]}.",
+                ),
+            }))
 
-    # Writing the cache also adds timestamps to records saved by older versions.
+    # Confirm we are updating the files we loaded, including after a slow fetch.
+    if fetch_seconds is not None or missing_timestamps:
+        snapshot.check_versions(snapshot_inputs(CONFIG))
     if records or missing_timestamps:
-        write_cached_records(
+        saved_records = write_cached_records(
             CONFIG.cache_file, [*cached_records.values(), *records]
         )
+        # Use the stored records, including timestamps, without decoding the cache again.
+        snapshot.cache = match_cached_candidates(saved_records.items(), snapshot.source_rows)
+        snapshot.cache_sha256 = fingerprint(CONFIG.cache_file)
     if missing_timestamps:
         print(f"Added cache timestamps to existing records: {missing_timestamps}")
 
@@ -76,7 +89,7 @@ async def run() -> None:
     # Keep the previous download report if this run used only cached movies.
     if fetch_seconds is not None:
         recorded_at = datetime.now(timezone.utc).isoformat()
-        record_path = CONFIG.cache_file.with_suffix(".acquisition.json")
+        record_path = acquisition_record_path(CONFIG)
         saved_unresolved: object = read_record(record_path).get("unresolved_by_id", {})
         if not isinstance(saved_unresolved, dict):
             raise ValueError(f"Expected an object for 'unresolved_by_id' in {record_path}.")
@@ -101,7 +114,7 @@ async def run() -> None:
                 "recorded_at_utc": recorded_at,
             }
         write_record(
-            record_path,
+            CONFIG.acquisition_file,
             {
                 "recorded_at_utc": recorded_at,
                 "input_sha256": snapshot_inputs(CONFIG),
@@ -124,24 +137,29 @@ async def run() -> None:
     print(f"Failed requests: {len(failures)}")
     for failure in failures:
         print(f"{failure.movie_id}: {failure.message}")
+    return snapshot
 
-    # The cache can contain films from older lists. Validate only today's resolved candidates.
-    available_records = cache.records | fetched_records
-    tables = normalize_movie_records(available_records.values())
-    stage = "After normalization"
-    print_check_report(stage, normalization_checks(stage, tables, set(available_records)))
 
-    # Report financial gaps using the same dollar rules as the analysis notebooks.
-    # The report keeps the affected movie IDs available for Adjoa to review.
-    issues = film_quality_issues(tables.movies)
-    quality_path = CONFIG.cache_file.with_suffix(".quality.csv")
-    write_text_atomic(quality_path, issues.to_csv(index=False))
-    print(f"Film data quality: {issues['movie_id'].nunique()} films with issues. See {quality_path}.")
+async def run() -> None:
+    """Bring the cache up to date, then run the analysis on the saved inputs."""
+    snapshot = await _acquire_movies()
+    # The notebook calls the same function and lets it load the saved candidate snapshot.
+    analysis = run_recommendation(CONFIG, snapshot=snapshot, output_dir=CONFIG.output_dir)
+    print_check_report("Recommendation input checks", analysis.inputs.checks)
+    print()
+    print(analysis.summary, end="")
+    print(f"\nSaved recommendation and CSVs to {analysis.directory}")
+    print(f"Exclusions report: {analysis.exclusions_path}")
+    print(f"Film issues: {analysis.quality_path}")
+    print(f"Run record: {analysis.directory / 'run.json'}")
 
 
 def main() -> None:
-    """Start the pipeline when someone runs the streamvault command."""
-    asyncio.run(run())
+    """Start the full pipeline when someone runs the streamvault command."""
+    try:
+        asyncio.run(run())
+    except (OSError, ValueError) as error:
+        raise SystemExit(f"StreamVault could not complete: {error}") from None
 
 
 if __name__ == "__main__":

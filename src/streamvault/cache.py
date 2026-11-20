@@ -97,8 +97,8 @@ def match_cached_candidates(
 
 def write_cached_records(
     path: str | Path, records: Iterable[dict[str, object]]
-) -> None:
-    """Save one record per movie ID, keeping the last copy of each."""
+) -> dict[str, dict[str, object]]:
+    """Save one record per movie ID and return the exact records that were written."""
     records_by_id: dict[str, dict[str, object]] = {}
     cached_at_utc = datetime.now(timezone.utc).isoformat()
     for record in records:
@@ -111,3 +111,4 @@ def write_cached_records(
     # Write one JSON line at a time so we don't build a second copy of the whole cache.
     lines = (json.dumps(record, ensure_ascii=False) + "\n" for record in records_by_id.values())
     write_text_atomic(Path(path), lines)
+    return records_by_id
