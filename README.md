@@ -21,6 +21,7 @@ StreamVault helps Kwame decide which films to pursue for a fictional $14M licens
    - [Output files](#pipeline-outputs)
    - [Run the browser app on your computer](#run-the-browser-app-on-your-computer)
    - [Pipeline steps](#the-pipeline)
+   - [Data checks, API use, and scale](#data-checks-api-use-and-scale)
    - [Tests](#test-the-pipeline)
    - [Notebooks](#how-the-notebooks-informed-the-work)
 
@@ -215,6 +216,12 @@ The local app can update the saved movie data and lookup history. Let an app run
 | Publish | Print the recommendation and save it with the rankings workbook, exclusions report, and run record. | [recommendation_run.py](src/streamvault/recommendation_run.py), [recommendation_reports.py](src/streamvault/recommendation_reports.py) |
 
 The [candidate list](id_list.csv) is included in the checkout. [config.toml](config.toml) sets the input paths, the CLI report folder (`out/` by default), request limits, timeouts, and retry settings.
+
+### Data checks, API use, and scale
+
+- **Diagnostic checks.** After loading, check for repeated cache IDs among current candidates. After fetching, check that each requested ID has one outcome. After normalization and joining, verify that movie IDs and links still match. Structural failures stop the run. Film-level gaps, such as missing gross, are listed in the exclusions report and affect only the calculations that need that value. Completed analyses save check results in `run.json`. [Findings](docs/02_findings.md) · [Data quality decision](docs/03-adr/004-stop-on-structural-errors.md)
+- **Responsible TMDB use.** Reuse cached films and request details and credits together for each uncached ID. The default settings allow four request starts per second and up to eight concurrent connections. Retry temporary failures and rate limits up to three times, honoring TMDB’s `Retry-After` header when supplied and valid. Record missing titles and failed requests separately. [Request settings](config.toml) · [Fetcher](src/streamvault/fetch_movies.py)
+- **Scalability and performance.** Use vectorized pandas operations for scoring, filtering, joins, and grouped summaries. For example, compute adjusted ratings for a whole column at once, then group films by collection to find each bundle’s median. This avoids a Python loop over each film for those calculations. The workbook benchmark processed 500 cached test titles in **3.76 seconds** on the measured setup. It timed reading saved inputs through writing reports and excluded TMDB downloads. [Scoring code](src/streamvault/recommendation.py) · [Benchmark guide](docs/05_benchmarks.md)
 
 ### Test the pipeline
 
