@@ -57,7 +57,12 @@ def atomic_output_path(path: Path) -> Iterator[Path]:
     """Give the report writer a temporary path and publish it on success."""
     path.parent.mkdir(parents=True, exist_ok=True)
     # The temporary file sits beside the destination so it can replace it in one step.
-    with NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as temp:
+    with NamedTemporaryFile(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as temp:
         temp_path = Path(temp.name)
     try:
         yield temp_path

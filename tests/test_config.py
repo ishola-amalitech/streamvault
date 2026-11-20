@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from streamvault.config import CONFIG, load_config
@@ -18,6 +19,19 @@ class AppConfigTests(unittest.TestCase):
             CONFIG.removals_file, project_root / "id_list_removals.csv"
         )
         self.assertEqual(CONFIG.output_dir, project_root / "out")
+        self.assertEqual(CONFIG.notebook_report_dir, project_root / "data/recommendation-report")
+
+    def test_custom_config_path_sets_the_notebook_output(self) -> None:
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        settings = root / "custom.toml"
+        original = (CONFIG.project_root / "config.toml").read_text(encoding="utf-8")
+        settings.write_text(
+            original.replace("data/recommendation-report", "custom/reports"),
+            encoding="utf-8",
+        )
+
+        with patch.dict("os.environ", {"STREAMVAULT_CONFIG": str(settings)}):
+            self.assertEqual(load_config().notebook_benchmark_dir, root / "custom/reports/benchmark")
 
     def test_missing_config_section_fails_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

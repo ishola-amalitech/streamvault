@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
+from os import getenv
 from pathlib import Path
 import tomllib
 from typing import cast
@@ -23,6 +24,7 @@ class AppConfig:
     cache_file: Path
     removals_file: Path
     output_dir: Path
+    notebook_report_dir: Path
 
     @property
     def acquisition_file(self) -> Path:
@@ -32,10 +34,6 @@ class AppConfig:
     def benchmark_dir(self) -> Path:
         # Keep performance experiments together under the configured output folder.
         return self.output_dir / "benchmarks"
-
-    @property
-    def notebook_report_dir(self) -> Path:
-        return self.project_root / "data" / "recommendation-report"
 
     @property
     def notebook_benchmark_dir(self) -> Path:
@@ -51,8 +49,8 @@ def _section(config: Mapping[str, object], name: str) -> Mapping[str, object]:
     return cast(Mapping[str, object], value)
 
 
-def _text(section: Mapping[str, object], key: str) -> str:
-    value = section.get(key)
+def _text(section: Mapping[str, object], key: str, *, default: str | None = None) -> str:
+    value = section.get(key, default)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"Config value '{key}' must be non-empty text.")
     return value
@@ -96,10 +94,12 @@ def _number(
 
 
 def load_config(config_path: str | Path | None = None) -> AppConfig:
-    if config_path is None:
-        resolved_config_path = Path(__file__).resolve().parents[2] / "config.toml"
+    selected_path = config_path if config_path is not None else getenv("STREAMVAULT_CONFIG")
+    if selected_path:
+        resolved_config_path = Path(selected_path).resolve()
     else:
-        resolved_config_path = Path(config_path).resolve()
+        # The editable install finds config.toml beside the checkout's src directory.
+        resolved_config_path = Path(__file__).resolve().parents[2] / "config.toml"
 
     try:
         with resolved_config_path.open("rb") as config_file:
@@ -149,7 +149,10 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         source_file=(project_root / _text(paths, "source_file")).resolve(),
         cache_file=(project_root / _text(paths, "cache_file")).resolve(),
         removals_file=(project_root / _text(paths, "removals_file")).resolve(),
-        output_dir=(project_root / _text({"output_dir": "out"} | paths, "output_dir")).resolve(),
+        output_dir=(project_root / _text(paths, "output_dir", default="out")).resolve(),
+        notebook_report_dir=(
+            project_root / _text(paths, "notebook_report_dir", default="data/recommendation-report")
+        ).resolve(),
     )
 
 

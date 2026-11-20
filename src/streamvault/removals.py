@@ -3,6 +3,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from streamvault.run_record import atomic_output_path
+
 
 FIELDS = ("source_file", "original_source_line", "removed_value", "reason")
 
@@ -22,14 +24,28 @@ def append_removals(path: Path, removals: Iterable[Removal]) -> None:
     if not pending:
         return
 
-    # Read earlier entries so rerunning the same list adds each issue only once.
-    existing: set[tuple[str, ...]] = set()
+    # Check the old file before adding anything so a bad log stays available for repair.
+    existing_rows: list[tuple[str, ...]] = []
     if path.exists():
         with path.open(newline="", encoding="utf-8") as file:
-            existing = {
-                tuple(row.get(field) or "" for field in FIELDS)
-                for row in csv.DictReader(file)
-            }
+            reader = csv.reader(file, strict=True)
+            try:
+                header = next(reader, None)
+                if header is not None and tuple(header) != FIELDS:
+                    raise ValueError(
+                        f"Invalid header in removal log {path}. Expected {', '.join(FIELDS)}."
+                    )
+                for row in reader:
+                    if len(row) != len(FIELDS):
+                        raise ValueError(
+                            f"Invalid row in removal log {path} at line {reader.line_num}."
+                        )
+                    existing_rows.append(tuple(row))
+            except csv.Error as error:
+                raise ValueError(
+                    f"Malformed CSV in removal log {path} at line {reader.line_num}."
+                ) from error
+    existing = set(existing_rows)
 
     new_rows: list[tuple[str, str, str, str]] = []
     for removal in pending:
@@ -50,9 +66,10 @@ def append_removals(path: Path, removals: Iterable[Removal]) -> None:
     if not new_rows:
         return
 
-    with path.open("a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        # Append mode starts at the end. An empty file still needs its header.
-        if file.tell() == 0:
+    # Replace the full log in one step so an interrupted write leaves the old log intact.
+    with atomic_output_path(path) as temporary_path:
+        with temporary_path.open("w", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
             writer.writerow(FIELDS)
-        writer.writerows(new_rows)
+            writer.writerows(existing_rows)
+            writer.writerows(new_rows)

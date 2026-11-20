@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
-from streamvault.load import MovieId
+from streamvault.load import MovieId, is_tmdb_movie_id
 from streamvault.removals import Removal
 from streamvault.run_record import write_text_atomic
 
@@ -32,11 +32,11 @@ def _movie_id(record: dict[str, object]) -> str:
     if isinstance(value, bool) or not isinstance(value, (int, str)):
         raise ValueError("Cached movie records must have a numeric 'id'.")
 
-    movie_id = str(value)
-    if not movie_id.isascii() or not movie_id.isdecimal() or int(movie_id) <= 0:
-        raise ValueError("Cached movie records must have a positive numeric 'id'.")
-    # Use the same key format as the CSV parser, including for older string IDs.
-    return movie_id.lstrip("0")
+    # Use the same key format and range as the CSV parser.
+    movie_id = str(value).lstrip("0")
+    if not is_tmdb_movie_id(movie_id):
+        raise ValueError("Cached movie records must have a positive numeric 'id' within TMDB's range.")
+    return movie_id
 
 
 def iter_cached_records(path: str | Path) -> Iterator[tuple[str, dict[str, object]]]:
@@ -71,8 +71,13 @@ def iter_cached_records(path: str | Path) -> Iterator[tuple[str, dict[str, objec
 
 
 def load_cached_records(path: str | Path) -> dict[str, dict[str, object]]:
-    # If an ID appears more than once, keep the last entry in the file.
-    return dict(iter_cached_records(path))
+    """Load the whole cache and reject repeated movie IDs."""
+    records: dict[str, dict[str, object]] = {}
+    for movie_id, record in iter_cached_records(path):
+        if movie_id in records:
+            raise ValueError(f"Repeated movie ID {movie_id} in {path}.")
+        records[movie_id] = record
+    return records
 
 
 def match_cached_candidates(
@@ -100,6 +105,7 @@ def write_cached_records(
 ) -> dict[str, dict[str, object]]:
     """Save one record per movie ID and return the exact records that were written."""
     records_by_id: dict[str, dict[str, object]] = {}
+    # This is the time of the cache write, shared by the batch.
     cached_at_utc = datetime.now(timezone.utc).isoformat()
     for record in records:
         # Preserve existing timestamps and leave the caller's records untouched.
@@ -109,6 +115,9 @@ def write_cached_records(
         records_by_id[_movie_id(cached_record)] = cached_record
 
     # Write one JSON line at a time so we don't build a second copy of the whole cache.
-    lines = (json.dumps(record, ensure_ascii=False) + "\n" for record in records_by_id.values())
+    lines = (
+        json.dumps(record, ensure_ascii=False) + "\n"
+        for record in records_by_id.values()
+    )
     write_text_atomic(Path(path), lines)
     return records_by_id

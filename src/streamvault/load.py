@@ -3,10 +3,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from streamvault.config import CONFIG
 from streamvault.removals import Removal, append_removals
 
 
+MAX_TMDB_MOVIE_ID = 2_147_483_647
 DUPLICATE_ID_REASON = "Duplicate TMDB movie ID; skipped."
 
 
@@ -16,6 +16,17 @@ class MovieId:
     source_line: int
     # Keep the original text for the audit when it differs from the ID we fetch.
     source_value: str | None = None
+
+
+def is_tmdb_movie_id(movie_id: str) -> bool:
+    """Check a movie ID after removing leading zeros."""
+    # TMDB expects a positive, signed 32-bit integer.
+    return (
+        movie_id.isascii()
+        and movie_id.isdecimal()
+        and len(movie_id) <= 10
+        and 0 < int(movie_id) <= MAX_TMDB_MOVIE_ID
+    )
 
 
 def iter_movie_id_rows(file_path: str | Path) -> Iterator[MovieId | Removal]:
@@ -43,8 +54,10 @@ def iter_movie_id_rows(file_path: str | Path) -> Iterator[MovieId | Removal]:
             movie_id = source_value.lstrip("0")
             if not source_value:
                 reason = "Blank row; no TMDB movie ID."
-            elif not movie_id or not movie_id.isascii() or not movie_id.isdecimal():
+            elif not is_tmdb_movie_id(movie_id):
                 reason = "Not a positive numeric TMDB movie ID."
+                if movie_id.isascii() and movie_id.isdecimal():
+                    reason = "TMDB movie ID exceeds the maximum of 2,147,483,647."
             elif movie_id in seen_ids:
                 reason = DUPLICATE_ID_REASON
             else:
@@ -57,20 +70,9 @@ def iter_movie_id_rows(file_path: str | Path) -> Iterator[MovieId | Removal]:
 
 
 def iter_movie_ids(
-    file_path: str | Path, removals_path: str | Path | None = None
+    file_path: str | Path, removals_path: str | Path,
 ) -> Iterator[MovieId]:
-    """Yield IDs to fetch and write skipped entries to the removal log."""
-    removal_log_path = (
-        CONFIG.removals_file if removals_path is None else Path(removals_path)
-    )
-    removals: list[Removal] = []
-
-    try:
-        for row in iter_movie_id_rows(file_path):
-            if isinstance(row, MovieId):
-                yield row
-            else:
-                removals.append(row)
-    finally:
-        # Save problems already found even if reading the list stops early.
-        append_removals(removal_log_path, removals)
+    """Read the complete list before logging skipped rows and yielding IDs."""
+    rows = list(iter_movie_id_rows(file_path))
+    append_removals(Path(removals_path), (row for row in rows if isinstance(row, Removal)))
+    yield from (row for row in rows if isinstance(row, MovieId))

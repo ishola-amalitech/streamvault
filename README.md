@@ -53,7 +53,7 @@ Complete these steps for Docker or local uv.
    TMDB_API_READ_ACCESS_TOKEN=your_read_access_token
    ```
 
-   For a run that reuses saved movie data and already has an outcome for every uncached ID, the `.env` file can be empty.
+   The commands below require the `.env` file to exist. Leave it empty only when reusing saved movie data and every uncached ID already has a recorded outcome.
 
 ### Docker
 
@@ -75,7 +75,7 @@ Complete these steps for Docker or local uv.
 
 ### Local uv
 
-1. Complete the [computer setup](#before-running-on-your-computer) and install uv. Run the setup commands from the project folder. [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)
+1. Complete the [computer setup](#before-running-on-your-computer) and install uv. Run the setup commands from the project folder. Python 3.14 is the minimum supported version. The lab was verified with Python 3.14.10. [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 
    ```sh
    uv python install 3.14
@@ -119,7 +119,7 @@ The app reads the saved results from both ZIPs, so you can compare them without 
 
 ## Run the benchmarks
 
-A benchmark checks how the analysis handles the roughly 500 titles Adjoa expects next year. The runtime test measures the steps from reading saved movie data through writing the reports. It leaves out the time to download movies. In the documented test with the rankings workbook, 500 test titles took **3.75 seconds**. The optional memory test checks whether using smaller field types saves enough memory to be worthwhile. [Benchmark guide and results](docs/05_benchmarks.md)
+A benchmark checks how the analysis handles the roughly 500 titles Adjoa expects next year. The runtime test measures the steps from reading saved movie data through writing the reports. It leaves out the time to download movies. In the 20 November 2026 test on x86-64 Linux under WSL2 with Python 3.14.10, 500 cached test titles took **3.76 seconds**. The optional memory test checks whether using smaller field types saves enough memory to be worthwhile. [Benchmark guide and results](docs/05_benchmarks.md)
 
 Run the pipeline on your computer first to save the movie data, then choose one of the methods below. For an ordinary review, just run the analysis. Its own timing is recorded in `run.json`.
 
@@ -142,7 +142,12 @@ docker run --rm --user "$(id -u):$(id -g)" \
   streamvault python scripts/benchmark_recommendation.py
 ```
 
-The commands write `benchmark.json` for runtime and `movie_types_benchmark.json` for memory under `out/benchmarks/`. Add `--notebook` to the end of either command to run a separate measurement and save it in `data/recommendation-report/benchmark/` for Notebook 04.
+Both benchmark modes write `benchmark.json` for runtime and `movie_types_benchmark.json` for memory.
+
+| Run being checked | Command option | Default report folder |
+| --- | --- | --- |
+| Pipeline | Run the command as shown above | `out/benchmarks/` |
+| Notebook 04 | Add `--notebook` | `data/recommendation-report/benchmark/` |
 
 ## Technical reference
 

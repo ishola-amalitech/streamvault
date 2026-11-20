@@ -24,7 +24,7 @@ Each value is the median of three runs in fresh processes per version. The compa
 
 ## Repeat check with the rankings workbook
 
-After switching to the workbook, the cached analysis took 1.67 seconds for 112 films. That projected to 7.44 seconds for 500 films. The measured run for 500 test films took **3.75 seconds**. In the separate memory test, the compact movie table used 308.7 KiB versus 330.6 KiB for the original. Peak memory stayed near 479 MiB and both versions gave identical reports. [Pipeline outputs](../README.md#pipeline-outputs)
+On 20 November 2026, the workbook benchmark ran on x86-64 Linux under WSL2 with Python 3.14.10. It took 1.64 seconds for 112 films and projected 7.32 seconds for 500. The measured run for 500 cached test films took **3.76 seconds**. The run record captured the platform and package versions. In the separate memory test, the compact movie table used 308.7 KiB versus 330.6 KiB for the original. Peak memory stayed near 479 MiB and both versions gave identical reports. [Pipeline outputs](../README.md#pipeline-outputs)
 
 ## Rerun the benchmarks
 

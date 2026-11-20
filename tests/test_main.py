@@ -195,6 +195,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             config = replace(
                 CONFIG, project_root=root, output_dir=root / "out", source_file=root / "titles.csv",
                 cache_file=root / "movies.jsonl", removals_file=root / "removals.csv",
+                notebook_report_dir=root / "data/recommendation-report",
             )
             ids = [*range(1, 12), 900, 901, 1]
             config.source_file.write_text("tmdb_id\n" + "".join(f"{key}\n" for key in ids), encoding="utf-8")

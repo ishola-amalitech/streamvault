@@ -22,6 +22,12 @@ Kwame is unavailable before the lab review. The answers come from the brief, the
 
 These notes record the choices behind the implemented analysis and what could change the answer. Notebook 04 shows the checks and results for this candidate list. [Recommendation notebook](../notebooks/04_recommendation.ipynb)
 
+### Input and quality rules
+
+Accept movie IDs from 1 through 2,147,483,647. Leading zeros are harmless when the remaining number is valid. Reject zero and values outside TMDB’s signed 32-bit range. Read the full candidate file before updating the removal log. A malformed header or row in an existing removal log stops the update and leaves the file available for repair. [TMDB movie details](https://developer.themoviedb.org/reference/movie-details)
+
+Treat a zero rating with zero votes as missing. Keep a zero rating with a positive vote count as a value on the 0–10 scale, subject to the usual vote minimum. Fractional and negative vote counts are invalid. A missing release date leaves the film outside both windows. If raw TMDB supplies a nonblank malformed date, normalization stops and names the movie IDs so a broken source format cannot quietly remove films from a window. [Quality checks](../src/streamvault/movie_quality.py) · [Normalizer](../src/streamvault/normalize.py)
+
 ### Release windows and packages
 
 Use dated, released films from the current list. A film released on or after 1 January 2000 can appear in both windows. Apply the cutoff to each installment so the newer window includes only newer film evidence, even if the series began earlier. A TMDB collection stands in for a package and a title without a collection ID stands in for a standalone. An observed collection can qualify with a single film, as requiring two would discard packages with only one installment in a window. Label those cases because one title may give a very different impression from the full package. If any observed installment in a window lacks a usable score, withhold that bundle's ranking for the window. [Lab brief](../lab_brief.md) · [Recommendation inputs](../src/streamvault/recommendation_inputs.py)

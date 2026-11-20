@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from streamvault.movie_quality import financial_inputs
+from streamvault.movie_quality import film_quality_issues, financial_inputs, rating_inputs
 
 
 class FinancialInputsTests(unittest.TestCase):
@@ -40,3 +40,27 @@ class FinancialInputsTests(unittest.TestCase):
         self.assertTrue(prepared.loc[7, ["budget", "revenue"]].isna().all())
         self.assertEqual(prepared.at[7, "budget_issue"], "Missing production budget")
         self.assertEqual(prepared.at[7, "revenue_issue"], "Missing box office gross")
+
+class RatingAndDateTests(unittest.TestCase):
+    def test_unrated_titles_and_fractional_votes_report_separate_issues(self) -> None:
+        inputs = rating_inputs(pd.DataFrame({
+            "vote_average": [0, 0, 8],
+            "vote_count": [0, 500, 12.5],
+        }))
+
+        self.assertEqual(inputs["rating_issue"].tolist(), ["Missing rating", "", ""])
+        self.assertEqual(inputs["vote_count_issue"].tolist(), ["", "", "Invalid vote count"])
+        self.assertTrue(pd.isna(inputs.at[2, "vote_count"]))
+        self.assertEqual(inputs.at[1, "vote_average"], 0)
+
+    def test_film_quality_reports_malformed_release_dates(self) -> None:
+        issues = film_quality_issues(pd.DataFrame({
+            "movie_id": [155],
+            "title": ["Example"],
+            "release_date": ["2023-02-29"],
+            "status": ["Released"],
+        }))
+
+        invalid_date = issues.loc[issues["issue"].eq("Invalid release date")]
+        self.assertEqual(invalid_date["movie_id"].tolist(), [155])
+        self.assertEqual(invalid_date["impact"].tolist(), ["Outside both release windows"])

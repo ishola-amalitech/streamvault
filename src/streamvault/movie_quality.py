@@ -12,9 +12,12 @@ def rating_inputs(films: pd.DataFrame) -> pd.DataFrame:
     # Convert through text so true or false cannot become a vote count or rating.
     rating = pd.to_numeric(raw["vote_average"].astype("string"), errors="coerce")
     votes = pd.to_numeric(raw["vote_count"].astype("string"), errors="coerce")
-    valid_rating = rating.between(0, 10).fillna(False)
+    # A zero with zero votes is an unrated title, so there is no audience score.
+    unrated = (rating.eq(0) & votes.eq(0)).fillna(False)
+    valid_rating = rating.between(0, 10).fillna(False) & ~unrated
     valid_vote_range = votes.between(0, float("inf"), inclusive="left").fillna(False)
-    valid_votes = votes.where(valid_vote_range).mod(1).eq(0).fillna(False)
+    whole_votes = votes.where(valid_vote_range).mod(1).eq(0).fillna(False)
+    valid_votes = valid_vote_range & whole_votes
 
     blank_reason = pd.Series("", index=raw.index, dtype="string")
     rating_issue = blank_reason.mask(~valid_rating, "Invalid rating")
@@ -22,7 +25,7 @@ def rating_inputs(films: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame({
         "vote_average": rating.where(valid_rating),
         "vote_count": votes.where(valid_votes),
-        "rating_issue": rating_issue.mask(raw["vote_average"].isna(), "Missing rating"),
+        "rating_issue": rating_issue.mask(raw["vote_average"].isna() | unrated, "Missing rating"),
         "vote_count_issue": vote_count_issue.mask(raw["vote_count"].isna(), "Missing vote count"),
     })
 
@@ -53,7 +56,8 @@ def film_quality_issues(movies: pd.DataFrame) -> pd.DataFrame:
         "budget", "revenue",
     ]).copy()
     # Use the same release scope as the analysis when checking scoring inputs.
-    dates = pd.to_datetime(films["release_date"])
+    dates = pd.to_datetime(films["release_date"], format="ISO8601", errors="coerce")
+    invalid_dates = films["release_date"].notna() & dates.isna()
     released = films["status"].astype("string").eq("Released").fillna(False)
     in_scope = dates.notna() & released
     inputs = rating_inputs(films.loc[in_scope])
@@ -64,6 +68,10 @@ def film_quality_issues(movies: pd.DataFrame) -> pd.DataFrame:
         issues.append(identities.loc[films[field].isna()].assign(
             issue=f"Missing {label}", impact="Outside both release windows",
         ))
+
+    issues.append(identities.loc[invalid_dates].assign(
+        issue="Invalid release date", impact="Outside both release windows",
+    ))
 
     for column in ("rating_issue", "vote_count_issue"):
         reasons = inputs.loc[inputs[column].ne(""), column]
@@ -80,10 +88,10 @@ def film_quality_issues(movies: pd.DataFrame) -> pd.DataFrame:
         issues.append(identities.loc[reasons.index].assign(issue=reasons, impact=impact))
 
     # A title and year match is a review lead. Keep every ID, including remakes and reissues.
+    titles = films["title"].astype("string").str.strip()
+    matching_titles = titles.str.casefold().str.replace(r"\s+", " ", regex=True)
     matching_keys = pd.DataFrame({
-        "title": films["title"].astype("string").str.strip().str.casefold().str.replace(
-            r"\s+", " ", regex=True,
-        ),
+        "title": matching_titles,
         "year": identities["release_year"],
     })
     matching_keys = matching_keys.loc[matching_keys["title"].fillna("").ne("")].dropna()

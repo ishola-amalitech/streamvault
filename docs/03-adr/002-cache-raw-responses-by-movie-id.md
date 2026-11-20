@@ -17,7 +17,7 @@ Keep one successful raw TMDB response per movie ID in a local JSON Lines file, w
 
 ## Consequences
 
-The pipeline and notebooks can reuse raw responses and limit results to today's candidates. Old candidates remain available for future lists. Ratings and popularity may be stale, and a timestamp added to an older record describes when it was stamped. [Question Q05](../03_questions.md)
+The pipeline and notebooks can reuse raw responses and limit results to today's candidates. Old candidates remain available for future lists. Ratings and popularity may be stale. New records from the same batch share a cache-write timestamp. A timestamp added to an older record shows when it was stamped. [Question Q05](../03_questions.md)
 
 ## Revisit when
 

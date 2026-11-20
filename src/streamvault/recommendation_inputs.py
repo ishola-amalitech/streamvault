@@ -42,14 +42,12 @@ def read_candidate_snapshot(config: AppConfig, *, log_removals: bool = False) ->
     started = perf_counter()
     source_sha256 = fingerprint(config.source_file)
     cache_sha256 = fingerprint(config.cache_file)
-    source_rows: list[MovieId | Removal] = []
-    try:
-        source_rows.extend(iter_movie_id_rows(config.source_file))
-    finally:
-        if log_removals:
-            # Keep issues found even if a later source row stops the run.
-            append_removals(config.removals_file, (row for row in source_rows if isinstance(row, Removal)))
+    source_rows = list(iter_movie_id_rows(config.source_file))
     cache = match_cached_candidates(iter_cached_records(config.cache_file), source_rows)
+    if log_removals:
+        # Leave the log untouched if the candidate CSV or cache could not be read.
+        skipped = (row for row in source_rows if isinstance(row, Removal))
+        append_removals(config.removals_file, skipped)
     return CandidateSnapshot(source_rows, cache, source_sha256, cache_sha256, perf_counter() - started)
 
 

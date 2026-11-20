@@ -67,15 +67,23 @@ class LoadTests(unittest.TestCase):
                 ],
             )
 
-    def test_extra_column_fails_and_keeps_an_earlier_removal(self) -> None:
+    def test_extra_column_does_not_write_partial_removals(self) -> None:
         self.source.write_text("tmdb_id\nbad\n42,43\n", encoding="utf-8")
 
         with self.assertRaisesRegex(ValueError, "line 3.*titles.csv"):
             list(iter_movie_ids(self.source, self.log))
 
-        with self.log.open(newline="", encoding="utf-8") as file:
-            logged_values = [row["removed_value"] for row in csv.DictReader(file)]
-            self.assertEqual(logged_values, ["bad"])
+        self.assertFalse(self.log.exists())
+
+    def test_ids_must_fit_tmdbs_signed_32_bit_range(self) -> None:
+        self.source.write_text("tmdb_id\n0002147483647\n2147483648\n" + "9" * 5000 + "\n")
+
+        maximum, too_large, very_large = list(iter_movie_id_rows(self.source))
+
+        self.assertEqual(maximum, MovieId("2147483647", 2, "0002147483647"))
+        for row in (too_large, very_large):
+            self.assertIsInstance(row, Removal)
+            self.assertIn("exceeds the maximum", row.reason)
 
     def test_missing_file_fails_and_leaves_no_log(self) -> None:
         with self.assertRaises(FileNotFoundError) as error:
