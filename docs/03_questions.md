@@ -30,9 +30,13 @@ Use dated, released films from the current list. A film released on or after 1 J
 
 Notebook 03 uses raw ratings to explore the data. For the recommendation, give priority to adjusted ratings. Pull each rating toward 7.0 by giving that starting point the weight of 1,000 votes. Require 1,000 recorded votes to rank. Using the same starting point in both windows and across reruns makes the scores comparable under the same settings. At the eligibility threshold, the observed rating and starting point have equal weight. This can lower the rank of titles with fewer votes. A reach-first rule can favor widely known films, and a gross-first rule can favor larger theatrical releases. The notebook tests reach-first, other vote floors, and a lower rating starting point.
 
+Calculate the adjusted rating as `(votes × rating + 1,000 × 7.0) / (votes + 1,000)`. A film rated 9.0 with 1,000 votes scores 8.0. The same rating with 4,000 votes scores 8.6. The extra votes move the score closer to the observed rating.
+
 Rank standalones by adjusted rating and then votes. Rank bundles by their middle adjusted rating, then their lowest installment score, then their median votes. Use full precision and the lowest numeric ID to break remaining ties.
 
 Count one median score per bundle and one score per standalone. Counting each film equally would give larger bundles more influence. Withhold a firm comparison when either side has fewer than five eligible options. Otherwise, favor a side only when the whole estimated 95% range for the difference clears a 0.25-point margin. Sort candidates by numeric ID and use seed 42 for 2,000 resamples. Use the 2.5th and 97.5th percentiles of the resulting gaps. These thresholds can leave a window without a firm preference. Show the two shortlists where evidence allows and explain unfilled spots. The notebook also compares films individually and removes the highest-scoring installment from each eligible bundle to see whether the lead depends on the strongest films. If two installments share the highest score, remove the one with the lower movie ID. Drop any bundle left with no films in that check. [Scoring and comparison code](../src/streamvault/recommendation.py) · [Recommendation notebook](../notebooks/04_recommendation.ipynb)
+
+In the lab snapshot, the standalone lead was 0.77 points across all years and 0.99 from 2000 onward. The lower ends of the estimated ranges were 0.49 and 0.50, respectively. Both cleared the 0.25-point margin. The ranges show how the gap varies when resampling the supplied options. The list’s sources and coverage limit what can be inferred about other films. [Findings F04 and F17](02_findings.md)
 
 ### Genre and talent evidence
 

@@ -8,4 +8,6 @@ The brief asks Adjoa to rerun the analysis on her own laptop, sometimes during a
 
 The comparison uses the results saved in each ZIP, so Adjoa can review earlier decisions even when the movie cache has changed. She only needs to keep the ZIP from each review. [Browser app instructions](../README.md#upload-a-list-in-the-browser)
 
-In a test, we removed four newer standalone titles from a copy of the candidate list. The app showed which titles left, entered, or moved on the shortlists. It also showed that the 2000-onward comparison no longer had enough eligible standalones to favor either group.
+In a check of the implemented app, we made two runs using the same saved movie data. The first used the sample list. The second removed *Spirited Away*, *Interstellar*, *Inception*, and *The Prestige*. That left four eligible standalones from 2000 onward (8 minus 4), below the five required for a firm comparison. The app showed that the newer result changed to insufficient evidence while the all-years result still favored standalones. It also showed which shortlist entries changed. [Comparison rule](03_questions.md#scoring-and-comparison)
+
+Keep each download intact. The app checks the rankings workbook against the saved run record to catch accidental changes or mismatched files. The check cannot authenticate a download if both files have been edited together. The upload is used for the current run, while saved TMDB responses and lookup outcomes can be reused. [Saved report bundles ADR](03-adr/005-compare-saved-report-bundles.md)

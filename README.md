@@ -17,6 +17,7 @@ StreamVault helps Kwame decide which films to pursue for a fictional $14M licens
 3. [Compare two saved reviews](#compare-two-saved-reviews)
 4. [Run the benchmarks](#run-the-benchmarks)
 5. [Technical reference](#technical-reference)
+   - [Submission files](#submission-files)
    - [Output files](#pipeline-outputs)
    - [Run the browser app on your computer](#run-the-browser-app-on-your-computer)
    - [Pipeline steps](#the-pipeline)
@@ -114,7 +115,7 @@ In the exclusions report, look at **Film data issues to review** for titles that
 2. Upload the original ZIP from the earlier review and the original ZIP from the later review.
 3. Check whether the recommendation changed in either release window. The shortlist table shows which films or bundles entered, left, or moved in rank.
 
-The app reads the saved results from both ZIPs, so you can compare them without running either list again. [Improvement beyond the brief](docs/06_beyond_the_brief.md)
+The app reads the saved results from both ZIPs, so you can compare them without running either list again.
 
 ## Run the benchmarks
 
@@ -144,6 +145,17 @@ docker run --rm --user "$(id -u):$(id -g)" \
 The commands write `benchmark.json` for runtime and `movie_types_benchmark.json` for memory under `out/benchmarks/`. Add `--notebook` to the end of either command to run a separate measurement and save it in `data/recommendation-report/benchmark/` for Notebook 04.
 
 ## Technical reference
+
+### Submission files
+
+| Lab deliverable | Where to find it |
+| --- | --- |
+| Data diagnosis and candidate coverage | [Findings ranked by risk](docs/02_findings.md) and the generated [exclusions report](#pipeline-outputs). |
+| Working analysis | [Pipeline entry point](src/streamvault/main.py) and [four analysis notebooks](#how-the-notebooks-informed-the-work). |
+| Analyst judgments and architecture | [Questions and analysis methods](docs/03_questions.md) and [five architecture decisions](docs/03-adr/). |
+| Client memo and deal note | [Kwame’s recommendation, shortlists, and evidence limits](docs/01_client_memo.md). |
+| One improvement beyond the brief | [Browser app for running and comparing saved reviews](docs/06_beyond_the_brief.md). The app entry point is [app.py](app.py). |
+| Scale and verification | The [benchmark guide](docs/05_benchmarks.md), runner scripts under [scripts/](scripts/), and automated checks under [tests/](tests/). |
 
 ### Pipeline outputs
 
@@ -235,7 +247,5 @@ docker run --rm -it --user "$(id -u):$(id -g)" \
   --mount "type=bind,source=$PWD,target=/app" \
   --publish 127.0.0.1:8888:8888 streamvault
 ```
-
-See the [findings](docs/02_findings.md) for the data evidence, the [questions log](docs/03_questions.md#analysis-methods) for how the recommendation was made, and the [architecture decisions](docs/03-adr/) for how the pipeline, notebooks, and app fit together.
 
 For a new architecture decision, use the next numbered file and follow the existing ADR format. If a decision changes, record it in a new ADR that links to the one it replaces.

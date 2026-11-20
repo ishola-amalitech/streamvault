@@ -10,7 +10,7 @@ Adjoa expects about 500 candidate titles. Two benchmarks tested whether the save
 | Projected for 500 titles at the same time per title | 6.89 s |
 | Measured on 500 cached test titles | 3.55 s |
 
-The script builds a 500-title test cache using the shapes of the 112 saved movie records, with distinct test IDs. It times reading the saved inputs through writing the reports and checking their file fingerprints. Fetching from TMDB, building the test cache, and writing the final run record are outside the timer. The output records the time for each stage as well as the total. A future list may have a different mix of collections, credits, and missing records. Treat the measured time as a test on this laptop. [Runtime benchmark script](../scripts/benchmark_recommendation.py)
+The script builds a 500-title test cache using the shapes of the 112 saved movie records, with distinct test IDs. It times reading the saved inputs through writing the reports and checking their file fingerprints. Fetching from TMDB, building the test cache, and writing the final run record are outside the timer. The output records the time for each stage as well as the total. A future list may have a different mix of collections, credits, and missing records. Treat the measured time as a test on this laptop. The brief gives a 500-title workload and a meeting-use scenario. It gives no numerical time limit, so the measured time describes the workload this laptop handled. [Runtime benchmark script](../scripts/benchmark_recommendation.py)
 
 ## Effect of smaller field types
 

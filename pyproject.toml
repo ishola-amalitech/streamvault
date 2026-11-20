@@ -1,7 +1,7 @@
 [project]
 name = "streamvault"
 version = "0.1.0"
-description = "Add your description here"
+description = "Compare franchise bundles and standalone films for licensing reviews"
 readme = "README.md"
 authors = [
     { name = "Ishola Faazele", email = "faazele.ishola@amalitech.com" }
