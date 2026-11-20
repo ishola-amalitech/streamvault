@@ -1,18 +1,35 @@
-"""Run StreamVault from a candidate CSV uploaded in the local browser."""
+"""Run StreamVault and compare saved reports in the local browser."""
 
 import asyncio
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
+from hashlib import sha256
 from io import BytesIO
+import json
 from pathlib import Path, PureWindowsPath
 from tempfile import TemporaryDirectory
 from threading import Lock
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
+from openpyxl.utils.exceptions import InvalidFileException
+import pandas as pd
 import streamlit as st
 
 from streamvault.config import CONFIG
 from streamvault.fetch_movies import MissingTokenError
 from streamvault.main import run
+from streamvault.recommendation import ON_SHORTLIST
+from streamvault.recommendation_inputs import ALL_YEARS, RECENT
+
+
+WINDOWS = (ALL_YEARS, RECENT)
+
+
+@dataclass(frozen=True)
+class SavedRun:
+    recorded_at: datetime
+    conclusions: dict[str, str]
+    rankings: pd.DataFrame
 
 
 @st.cache_resource
@@ -51,8 +68,72 @@ def clear_result() -> None:
     st.session_state.pop("result", None)
 
 
-def render_page() -> None:
-    st.title("StreamVault recommendations")
+def read_saved_run(contents: bytes) -> SavedRun:
+    """Read the decision and ranks from an app download without unpacking it to disk."""
+    try:
+        with ZipFile(BytesIO(contents)) as archive:
+            # A 500-title report is well below these limits. Check before opening compressed data.
+            run_file = archive.getinfo("run.json")
+            rankings_file = archive.getinfo("rankings.xlsx")
+            if max(run_file.file_size, rankings_file.file_size) > 8 * 1024**2:
+                raise ValueError("Report files are too large.")
+            record = json.loads(archive.read(run_file))
+            workbook = archive.read(rankings_file)
+        if record["rankings_sha256"] != sha256(workbook).hexdigest():
+            raise ValueError("The workbook does not match the run record.")
+        with ZipFile(BytesIO(workbook)) as spreadsheet:
+            if sum(member.file_size for member in spreadsheet.infolist()) > 32 * 1024**2:
+                raise ValueError("The workbook is too large.")
+
+        recorded_at = datetime.fromisoformat(record["recorded_at_utc"])
+        if recorded_at.tzinfo is None:
+            raise ValueError("The run timestamp has no time zone.")
+        baseline = {
+            row["window"]: row["conclusion"] for row in record["comparison_results"] if row["scenario"] == "Baseline"
+        }
+        conclusions = {window: baseline[window] for window in WINDOWS}
+        sheets = pd.read_excel(
+            BytesIO(workbook), engine="openpyxl", sheet_name=["Bundles", "Standalones"],
+            dtype={"Collection ID": str, "Movie ID": str}, keep_default_na=False,
+        )
+        rankings = []
+        for sheet, kind, id_column, title_column in (
+            ("Bundles", "Bundle", "Collection ID", "Bundle"),
+            ("Standalones", "Standalone", "Movie ID", "Film"),
+        ):
+            for window in WINDOWS:
+                columns = {
+                    id_column: "ID", title_column: "Candidate", f"{window} rank": "Rank", f"{window} result": "Result",
+                }
+                rows = sheets[sheet][list(columns)].rename(columns=columns)
+                rows["Rank"] = pd.to_numeric(rows["Rank"].replace("", pd.NA)).astype("Int64")
+                if rows["ID"].eq("").any() or rows["ID"].duplicated().any():
+                    raise ValueError("Candidate IDs are missing or repeated.")
+                rankings.append(rows.assign(Window=window, Type=kind))
+    except (BadZipFile, InvalidFileException, KeyError, OSError, RuntimeError, SyntaxError, TypeError, ValueError) as error:
+        raise ValueError("Use an intact ZIP from StreamVault's Download reports button.") from error
+
+    return SavedRun(recorded_at, conclusions, pd.concat(rankings).set_index(["Window", "Type", "ID"]))
+
+
+def compare_shortlists(earlier: SavedRun, later: SavedRun) -> pd.DataFrame:
+    """Show rank changes involving a shortlist spot, matched by ID within each window and type."""
+    rows = earlier.rankings.join(later.rankings, how="outer", lsuffix=" earlier", rsuffix=" later", validate="one_to_one")
+    picked_earlier = rows["Result earlier"].eq(ON_SHORTLIST).fillna(False)
+    picked_later = rows["Result later"].eq(ON_SHORTLIST).fillna(False)
+    # Keep the saved rank on either side, including when the candidate ranked below the shortlist.
+    rows["Change"] = ""
+    rows.loc[picked_earlier & ~picked_later, "Change"] = "Left shortlist"
+    rows.loc[~picked_earlier & picked_later, "Change"] = "Entered shortlist"
+    in_both = picked_earlier & picked_later
+    rows.loc[in_both & rows["Rank later"].lt(rows["Rank earlier"]), "Change"] = "Moved up"
+    rows.loc[in_both & rows["Rank later"].gt(rows["Rank earlier"]), "Change"] = "Moved down"
+    rows["Candidate"] = rows["Candidate later"].combine_first(rows["Candidate earlier"])
+    columns = ["Window", "Type", "Candidate", "Rank earlier", "Rank later", "Change"]
+    return rows.loc[rows["Change"].ne("")].reset_index()[columns]
+
+
+def render_recommendation() -> None:
     uploaded = st.file_uploader(
         "Candidate list", type="csv", help="Use a CSV with one column named tmdb_id.",
         on_change=clear_result,
@@ -75,6 +156,47 @@ def render_page() -> None:
             mime="application/zip", on_click="ignore",
         )
         st.markdown(summary)
+
+
+def render_comparison() -> None:
+    earlier_file = st.file_uploader("Earlier reports ZIP", type="zip")
+    later_file = st.file_uploader("Later reports ZIP", type="zip")
+    if earlier_file is None or later_file is None:
+        return
+    try:
+        earlier = read_saved_run(earlier_file.getvalue())
+        later = read_saved_run(later_file.getvalue())
+    except ValueError as error:
+        st.error(str(error))
+        return
+    if earlier.recorded_at > later.recorded_at:
+        st.error("Put the older run in Earlier reports ZIP.")
+        return
+
+    earlier_date = earlier.recorded_at.astimezone(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+    later_date = later.recorded_at.astimezone(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+    st.caption(f"Earlier run {earlier_date} · Later run {later_date}")
+    st.subheader("Recommendation by release window")
+    decisions = pd.DataFrame({
+        "Window": WINDOWS, "Earlier": [earlier.conclusions[window] for window in WINDOWS],
+        "Later": [later.conclusions[window] for window in WINDOWS],
+    })
+    st.table(decisions, hide_index=True)
+    st.subheader("Shortlist changes")
+    changes = compare_shortlists(earlier, later)
+    if changes.empty:
+        st.info("The shortlisted titles and their ranks stayed the same.")
+    else:
+        st.dataframe(changes, hide_index=True)
+
+
+def render_page() -> None:
+    st.title("StreamVault recommendations")
+    recommendation, comparison = st.tabs(["Run recommendation", "Compare saved runs"])
+    with recommendation:
+        render_recommendation()
+    with comparison:
+        render_comparison()
 
 
 if __name__ == "__main__":

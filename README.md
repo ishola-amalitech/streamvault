@@ -76,6 +76,8 @@ docker run --rm --user "$(id -u):$(id -g)" \
 
 Open `http://localhost:8501`, upload the CSV, then click **Run recommendation**. The page shows the results for both release windows. **Download reports** saves the recommendation, the rankings workbook, and the exclusions report in one ZIP. It also includes the original upload, the run record, and a row removal log when there are rows to log. Download the ZIP before closing the page or switching to another list.
 
+To compare two reviews, open **Compare saved runs** and upload the earlier and later report ZIPs. The app shows the recommendation in each window and which shortlist picks entered, left, or moved in rank. This uses the saved reports, so you can compare them without fetching movies or rerunning the analysis. [Improvement beyond the brief](docs/beyond_the_brief.md)
+
 The app reuses the local movie cache and saved lookup outcomes. New IDs need the same TMDB token as the command line. The app keeps the project candidate CSV and the CLI recommendation reports in place. It can update the shared movie cache and acquisition history in `out/`, so let an app run finish before starting a CLI run. The run record in the ZIP includes the acquisition counts and timing when this upload fetched data. [App entry point](app.py)
 
 ### Pipeline outputs
