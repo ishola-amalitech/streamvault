@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from benchmark_recommendation import (
-    TEST_TITLES, prepare_snapshot, read_templates, run_snapshot, write_test_snapshot,
+    TEST_TITLES, benchmark_report_dir, prepare_snapshot, read_templates, run_snapshot, write_test_snapshot,
 )
 from streamvault._normalize_tables import Row
 from streamvault.cache import iter_cached_records
@@ -104,6 +104,7 @@ def measure_snapshot(source_name: str, variant: str) -> None:
 
 
 def main() -> None:
+    report_dir = benchmark_report_dir(CONFIG, "Measure memory on 500 cached test titles.")
     verify_integer_limits()
     variants = ("original", "compact")
     trials: dict[str, list[dict[str, int | float]]] = {variant: [] for variant in variants}
@@ -154,7 +155,7 @@ def main() -> None:
     if reference_run is None:
         raise RuntimeError("The memory benchmark recorded no completed trials.")
 
-    report_path = CONFIG.output_dir / "movie_types_benchmark.json"
+    report_path = report_dir / "movie_types_benchmark.json"
     summary: dict[str, dict[str, int | float]] = {
         variant: {key: median(trial[key] for trial in attempts) for key in attempts[0]}
         for variant, attempts in trials.items()

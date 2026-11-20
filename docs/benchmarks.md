@@ -35,4 +35,11 @@ uv run --locked python scripts/benchmark_recommendation.py
 uv run --locked python scripts/benchmark_movie_types.py
 ```
 
-The scripts save `out/benchmark.json` and `out/movie_types_benchmark.json` by default. For Docker, use the [README's test command](../README.md#test-the-pipeline) and replace `python -m unittest discover -s tests` with `python scripts/benchmark_recommendation.py` or `python scripts/benchmark_movie_types.py`.
+The scripts save the pipeline's benchmark reports under `out/benchmarks/`. To run separate measurements for Notebook 04, add `--notebook` to either command.
+
+```sh
+uv run --locked python scripts/benchmark_recommendation.py --notebook
+uv run --locked python scripts/benchmark_movie_types.py --notebook
+```
+
+These commands write `benchmark.json` and `movie_types_benchmark.json` under `data/recommendation-report/benchmark/`. The notebook uses the shared cached analysis and reads the saved runtime from that folder. Each ordinary run records its own timing in its `run.json`. For Docker, use the [README's test command](../README.md#test-the-pipeline) and replace `python -m unittest discover -s tests` with the corresponding `python scripts/...` command above.

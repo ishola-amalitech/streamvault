@@ -256,8 +256,8 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Before 1 January 2000", exclusions)
 
             # The notebook uses the same calculation on the saved snapshot but writes separate files.
-            notebook_dir = config.cache_file.with_suffix(".recommendation")
-            notebook_exclusions = config.cache_file.with_name("recommendation_exclusions.md")
+            notebook_dir = root / "data" / "recommendation-report"
+            notebook_exclusions = notebook_dir / "recommendation_exclusions.md"
             self.assertFalse(notebook_dir.exists())
             self.assertFalse(config.cache_file.with_suffix(".quality.csv").exists())
             self.assertFalse(notebook_exclusions.exists())
@@ -265,6 +265,8 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(notebook_run.directory, notebook_dir)
             self.assertEqual(notebook_run.exclusions_path, notebook_exclusions)
             self.assertEqual(notebook_exclusions.read_text(), exclusions)
+            self.assertEqual({path.name for path in notebook_dir.iterdir()}, {path.name for path in folder.iterdir()})
+            self.assertFalse((config.cache_file.parent / "recommendation_exclusions.md").exists())
             self.assertFalse((root / "docs/recommendation_exclusions.md").exists())
             self.assertEqual(notebook_run.record["comparison_results"], record["comparison_results"])
             for field in ("rankings_sha256", "recommendation_sha256", "exclusions_report_sha256"):

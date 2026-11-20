@@ -1,5 +1,6 @@
 """Time the cached recommendation stage at the current size and at 500 titles."""
 
+from argparse import ArgumentParser
 import copy
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
@@ -105,8 +106,16 @@ def write_test_snapshot(settings: AppConfig, templates: Sequence[Row]) -> None:
     write_cached_records(settings.cache_file, records)
 
 
+def benchmark_report_dir(settings: AppConfig, description: str) -> Path:
+    parser = ArgumentParser(description=description)
+    parser.add_argument("--notebook", action="store_true", help="Save a separate benchmark report for Notebook 04.")
+    args = parser.parse_args()
+    return settings.notebook_benchmark_dir if args.notebook else settings.benchmark_dir
+
+
 def main() -> None:
     source_config = config.CONFIG
+    report_dir = benchmark_report_dir(source_config, "Time the cached analysis on the current list and 500 test titles.")
     root = source_config.project_root
 
     with TemporaryDirectory(prefix="streamvault-benchmark-") as directory:
@@ -167,7 +176,7 @@ def main() -> None:
         "stages": stages,
         "recorded_at_utc": timed["recorded_at_utc"],
     }
-    report = source_config.output_dir / "benchmark.json"
+    report = report_dir / "benchmark.json"
     write_record(report, benchmark)
     print(f"Cached analysis for {baseline_titles} titles took {benchmark['baseline_seconds']:.2f} seconds.")
     print(f"Estimated time for {TEST_TITLES} titles: {benchmark['projected_seconds']:.2f} seconds.")

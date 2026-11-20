@@ -120,10 +120,14 @@ def run_recommendation(
     if recommendation_inputs(config) != inputs.input_sha256:
         raise ValueError("A saved input changed during analysis. Run StreamVault again.")
 
-    # Notebook runs keep their generated reports beside the saved cache.
-    directory = output_dir if output_dir is not None else config.cache_file.with_suffix(".recommendation")
-    exclusions_dir = directory if output_dir is not None else config.cache_file.parent
-    exclusions = exclusions_dir / "recommendation_exclusions.md"
+    # Each entry point reads the benchmarks saved for its own reports.
+    if output_dir is None:
+        directory = config.notebook_report_dir
+        benchmark_dir = config.notebook_benchmark_dir
+    else:
+        directory = output_dir
+        benchmark_dir = config.benchmark_dir
+    exclusions = directory / "recommendation_exclusions.md"
     rankings_path = directory / "rankings.xlsx"
     # Publish the run record last so its fingerprints describe the finished reports.
     write_rankings(rankings_path, rankings)
@@ -194,7 +198,7 @@ def run_recommendation(
         "cached_analysis_seconds": sum(stage_seconds.values()),
         "cached_timing_boundary": CACHED_TIMING_BOUNDARY,
         "cached_stage_seconds": stage_seconds,
-        "cached_scale_check": _matching_benchmark(config.output_dir, inputs.input_sha256, code, versions),
+        "cached_scale_check": _matching_benchmark(benchmark_dir, inputs.input_sha256, code, versions),
     }
     write_record(directory / "run.json", record)
     return RecommendationRun(inputs, results, talent, tests, summary, directory, exclusions, rankings_path, record)

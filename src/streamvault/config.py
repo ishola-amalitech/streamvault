@@ -28,6 +28,19 @@ class AppConfig:
     def acquisition_file(self) -> Path:
         return self.output_dir / f"{self.cache_file.stem}.acquisition.json"
 
+    @property
+    def benchmark_dir(self) -> Path:
+        # Keep performance experiments together under the configured output folder.
+        return self.output_dir / "benchmarks"
+
+    @property
+    def notebook_report_dir(self) -> Path:
+        return self.project_root / "data" / "recommendation-report"
+
+    @property
+    def notebook_benchmark_dir(self) -> Path:
+        return self.notebook_report_dir / "benchmark"
+
 
 def _section(config: Mapping[str, object], name: str) -> Mapping[str, object]:
     value = config.get(name)
