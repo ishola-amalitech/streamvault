@@ -12,7 +12,7 @@ StreamVault is a lab about a fictional $14M film licensing decision. The pipelin
 | Check the cache | Stop if a current candidate has duplicate cache entries. Reuse saved movies and pass only the missing IDs to the downloader. | [cache.py](src/streamvault/cache.py) |
 | Fetch the missing movies | Request movie details and credits from TMDB, limit request speed, and retry temporary failures. Report whether every requested ID has one outcome before saving new responses. | [fetch_movies.py](src/streamvault/fetch_movies.py) |
 | Save and report | Add successful responses to the local cache. Record the fetch time and unresolved IDs when the pipeline makes requests, then print a summary. | [cache.py](src/streamvault/cache.py), [run_record.py](src/streamvault/run_record.py) |
-| Normalize and validate | Build the tables in memory. Check candidate IDs, collection joins, and genre and talent links. Stop on structural failures. Save film-level review issues beside the cache. | [normalize.py](src/streamvault/normalize.py), [diagnostics.py](src/streamvault/diagnostics.py) |
+| Normalize and validate | Build the tables in memory. Check candidate IDs, collection joins, and genre and talent links. Stop on structural failures. Save film-level review issues beside the cache using the same budget and gross rules as Notebooks 03 and 04. | [normalize.py](src/streamvault/normalize.py), [diagnostics.py](src/streamvault/diagnostics.py), [movie_quality.py](src/streamvault/movie_quality.py) |
 
 The [candidate list](id_list.csv) is included in the checkout. [config.toml](config.toml) sets the file paths, request limits, timeouts, and retry settings.
 
@@ -62,7 +62,7 @@ A repeat run reuses saved entries and tries uncached IDs again. Git ignores the 
 
 After running Notebook 04, open the sections **Film data issues to review** and **Evidence left for Adjoa**. The first lists individual film issues. The second shows how many bundles and standalones qualify in each release window and how many shortlist spots are unfilled. [Exclusions report](docs/recommendation_exclusions.md)
 
-- **Missing or invalid data.** A film without a usable release date stays out of both windows. A dated, released film with unusable rating inputs stays unscored and can make its bundle ineligible. Missing budget or gross affects only the financial calculations that need it.
+- **Missing or invalid data.** A film without a usable release date stays out of both windows. A dated, released film with unusable rating inputs stays unscored and can make its bundle ineligible. For financial summaries, keep each positive, finite dollar amount. Missing, zero, or invalid budget affects only calculations that need budget. For example, a film with valid gross and a zero budget still counts toward median gross. Gross less budget needs both amounts.
 - **Provisional.** Compare the flagged TMDB records before relying on that window’s shortlist or ratings preference. A shared title and year calls for review, and both movie IDs stay visible.
 - **Too few options.** If either side has fewer than five eligible options, use the available shortlist entries as leads and hold back a firm franchise-versus-standalone recommendation.
 
@@ -86,7 +86,7 @@ The notebooks show the checks and experiments behind the pipeline design and the
 | --- | --- |
 | [01 · Validate normalization](notebooks/01_validate_normalization.ipynb) | Shows how to turn nested TMDB responses into usable tables, check joins, and account for source rows. |
 | [02 · Profile the data](notebooks/02_profile_movie_data.ipynb) | Checks current candidates for missing fields, numeric validity, and possible duplicate films. It also audits identical raw records across the whole cache. |
-| [03 · Explore the data](notebooks/03_eda_movie_data.ipynb) | Flags unusually high or low values and explores patterns in ratings, box office, genres, franchises, and talent. |
+| [03 · Explore the data](notebooks/03_eda_movie_data.ipynb) | Profiles matched films, shows release-window counts, and checks unusual values and four numeric relationships. For dated releases across all years, it reports coverage by category, usable ratings, production budgets, and reported box-office gross by genre, collection, and talent, and whether genre tags improve a gross model. |
 | [04 · Make the recommendation](notebooks/04_recommendation.ipynb) | Compares bundles and standalones, ranks targets in both release windows, and tests how sensitive the results are to changes in scoring. |
 
 The notebooks already share code for turning raw responses into tables and running data checks. [normalize.py](src/streamvault/normalize.py) · [diagnostics.py](src/streamvault/diagnostics.py)

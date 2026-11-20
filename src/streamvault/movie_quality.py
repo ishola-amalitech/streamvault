@@ -27,6 +27,25 @@ def rating_inputs(films: pd.DataFrame) -> pd.DataFrame:
     })
 
 
+def financial_inputs(films: pd.DataFrame) -> pd.DataFrame:
+    """Return usable dollar amounts and a reason for each unusable value."""
+    raw = films.reindex(columns=["budget", "revenue"])
+    prepared = pd.DataFrame(index=raw.index)
+    for field, label in (("budget", "production budget"), ("revenue", "box office gross")):
+        # Convert through text so a Boolean cannot become a dollar amount.
+        amounts = raw[field]
+        values = pd.to_numeric(amounts.astype("string"), errors="coerce").astype(float)
+        usable = values.between(0, float("inf"), inclusive="neither")
+        reason = pd.Series("", index=raw.index, dtype="string")
+        reason = reason.mask(~usable, f"Invalid {label}")
+        # TMDB's zero does not give us a usable dollar amount.
+        reason = reason.mask(values.eq(0), f"Zero {label}")
+        reason = reason.mask(amounts.isna(), f"Missing {label}")
+        prepared[field] = values.where(usable)
+        prepared[f"{field}_issue"] = reason
+    return prepared
+
+
 def film_quality_issues(movies: pd.DataFrame) -> pd.DataFrame:
     """List the films Adjoa should review, with one row for each issue."""
     films = movies.reindex(columns=[
@@ -52,19 +71,13 @@ def film_quality_issues(movies: pd.DataFrame) -> pd.DataFrame:
             issue=reasons, impact="Film cannot be scored and can make its bundle ineligible",
         ))
 
-    for field, label, impact in (
-        ("budget", "production budget", "Excluded from calculations that need budget"),
-        ("revenue", "box office gross", "Excluded from calculations that need gross"),
+    financials = financial_inputs(films)
+    for column, impact in (
+        ("budget_issue", "Excluded from calculations that need budget"),
+        ("revenue_issue", "Excluded from calculations that need gross"),
     ):
-        amounts = films[field]
-        values = pd.to_numeric(amounts.astype("string"), errors="coerce")
-        invalid = amounts.notna() & ~values.between(0, float("inf"), inclusive="left").fillna(False)
-        reason = pd.Series("", index=films.index, dtype="string")
-        reason = reason.mask(amounts.isna(), f"Missing {label}")
-        reason = reason.mask(invalid, f"Invalid {label}")
-        reason = reason.mask(values.eq(0).fillna(False), f"Zero {label}")
-        affected = reason.ne("")
-        issues.append(identities.loc[affected].assign(issue=reason.loc[affected], impact=impact))
+        reasons = financials.loc[financials[column].ne(""), column]
+        issues.append(identities.loc[reasons.index].assign(issue=reasons, impact=impact))
 
     # A title and year match is a review lead. Keep every ID, including remakes and reissues.
     matching_keys = pd.DataFrame({

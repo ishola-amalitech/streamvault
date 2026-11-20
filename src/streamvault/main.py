@@ -131,7 +131,8 @@ async def run() -> None:
     stage = "After normalization"
     print_check_report(stage, normalization_checks(stage, tables, set(available_records)))
 
-    # Keep all affected IDs in a report Adjoa can review after the run.
+    # Report financial gaps using the same dollar rules as the analysis notebooks.
+    # The report keeps the affected movie IDs available for Adjoa to review.
     issues = film_quality_issues(tables.movies)
     quality_path = CONFIG.cache_file.with_suffix(".quality.csv")
     write_text_atomic(quality_path, issues.to_csv(index=False))
