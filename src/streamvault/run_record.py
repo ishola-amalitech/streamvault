@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, cast
@@ -51,26 +52,27 @@ def read_record(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], record)
 
 
-def write_text_atomic(path: Path, text: str | Iterable[str]) -> None:
-    """Replace a file only after all the new text has been written."""
+@contextmanager
+def atomic_output_path(path: Path) -> Iterator[Path]:
+    """Give the report writer a temporary path and publish it on success."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
+    # The temporary file sits beside the destination so it can replace it in one step.
+    with NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as temp:
+        temp_path = Path(temp.name)
     try:
-        # Keep the temporary file beside the destination so it can replace it in one step.
-        with NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent,
-            prefix=f".{path.name}.", suffix=".tmp", delete=False,
-        ) as temp:
-            temp_path = Path(temp.name)
-            if isinstance(text, str):
-                temp.write(text)
-            else:
-                temp.writelines(text)
+        yield temp_path
         os.replace(temp_path, path)
     finally:
-        # An error while writing should leave the old file and remove the unfinished one.
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+        temp_path.unlink(missing_ok=True)
+
+
+def write_text_atomic(path: Path, text: str | Iterable[str]) -> None:
+    """Replace a file only after all the new text has been written."""
+    with atomic_output_path(path) as temp_path, temp_path.open("w", encoding="utf-8") as temp:
+        if isinstance(text, str):
+            temp.write(text)
+        else:
+            temp.writelines(text)
 
 
 def write_record(path: Path, record: Mapping[str, object]) -> None:

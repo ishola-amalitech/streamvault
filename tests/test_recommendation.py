@@ -50,7 +50,7 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(result["interval_low"], -1.0)
         self.assertEqual(result["interval_high"], -1.0)
 
-    def test_standalone_csv_data_keeps_original_and_usable_gross_separate(self) -> None:
+    def test_standalone_report_keeps_original_and_usable_gross_separate(self) -> None:
         films = pd.DataFrame({
             "movie_id": [1, 2, 3, 4],
             "collection_id": pd.array([None, None, None, None], dtype="Int64"),
@@ -59,7 +59,7 @@ class RecommendationTests(unittest.TestCase):
             "budget": [10, 10, 0, 5],
             "revenue": ["0", "unavailable", "100", "30"],
         })
-        base = prepare_standalone_report(films, pd.Series(dtype="string"))
+        base = prepare_standalone_report(films)
         scored = score_films(films.iloc[:3])
         _, ranking = rank_window(scored, summarize_bundles(scored, pd.Series(dtype="string")))
         outcomes = pd.Series({1: "Shortlisted", 2: "Shortlisted", 3: "Shortlisted", 4: "Before cutoff"})

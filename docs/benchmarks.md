@@ -22,6 +22,10 @@ The script builds a 500-title test cache using the shapes of the 112 saved movie
 
 Each value is the median of three runs in fresh processes per version. The compact version keeps the original movie and collection ID sizes. It uses smaller types for budget, gross, runtime and vote counts where the values fit, and stores repeated status and language labels more efficiently. Peak memory includes imports. The script checks that both versions preserve the movie values, joins, shortlists, and report contents. The compact version saved 61.8 KiB in the movie table, with little change in the whole process. The pipeline keeps the original types. [Memory benchmark script](../scripts/benchmark_movie_types.py) · [Finding F14](findings.md)
 
+## Repeat check with the rankings workbook
+
+After switching to the workbook, the cached analysis took 1.67 seconds for 112 films. That projected to 7.44 seconds for 500 films. The measured run for 500 test films took **3.75 seconds**. In the separate memory test, the compact movie table used 308.7 KiB versus 330.6 KiB for the original. Peak memory stayed near 479 MiB and both versions gave identical reports. [Export decision](DECISIONS.md#d12--give-adjoa-three-reports-for-each-rerun)
+
 ## Rerun the benchmarks
 
 Run from the project root with a populated movie cache. The memory benchmark runs on Linux or macOS. Times and memory use can vary by machine and run.

@@ -2039,6 +2039,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "scikit-learn" },
+    { name = "xlsxwriter" },
 ]
 
 [package.optional-dependencies]
@@ -2061,6 +2062,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=3.1.1" },
     { name = "scikit-learn", specifier = ">=1.9.1" },
     { name = "streamlit", marker = "extra == 'app'", specifier = ">=1.67.0" },
+    { name = "xlsxwriter", specifier = ">=3.3.2" },
 ]
 provides-extras = ["app"]
 
@@ -2399,4 +2401,13 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bf/60/bc7a980fc78837d6ef8f5940cca4cadc433364503a4c4d42e2a7a0de3231/widgetsnbextension-4.0.16.tar.gz", hash = "sha256:adeea0ae78f0856ee4945f413299801b82a0a01416303301f39a704282a37b73", size = 1111094, upload-time = "2026-08-18T08:52:55.859Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/34/95/40e17e20046b7bc820d29d09ae84ec157ec8dd6e6f6cd722626292c31b2e/widgetsnbextension-4.0.16-py3-none-any.whl", hash = "sha256:a31a8774885b96fe825462f5d6496166f0c7cae111195b6465c801d230eb5a4e", size = 2225148, upload-time = "2026-08-18T08:52:53.736Z" },
+]
+
+[[package]]
+name = "xlsxwriter"
+version = "3.3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/ff/ce271c4e8da536ea6527a755ceb7921a2d012ef32c68b34a8fed8b80b95a/xlsxwriter-3.3.2.tar.gz", hash = "sha256:a7ec4285416ee246753ad21c18ef6c161cdeaf2c29a7b9475236cce6098b21fe", size = 223740, upload-time = "2026-11-19T18:36:54.463Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/d7/08bf584f3308e0ea1fa84f0cb9a0f225ef7178eb1face785a190f08a97be/xlsxwriter-3.3.2-py3-none-any.whl", hash = "sha256:bc10b314ec3bbcc910b489f095f1a365863d9482afa681748f97d6d5e976f944", size = 180558, upload-time = "2026-11-19T18:36:53.169Z" },
 ]

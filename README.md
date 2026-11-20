@@ -74,7 +74,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
   streamvault streamlit run app.py --server.address 0.0.0.0
 ```
 
-Open `http://localhost:8501`, upload the CSV, then click **Run recommendation**. The page shows the results for both release windows. **Download reports** saves a ZIP with the original upload, the recommendation, both sets of shortlists, the exclusions and quality reports, the run record, and supporting tables. It also includes a row removal log when there are rows to log. Download the ZIP before closing the page or switching to another list.
+Open `http://localhost:8501`, upload the CSV, then click **Run recommendation**. The page shows the results for both release windows. **Download reports** saves the recommendation, the rankings workbook, and the exclusions report in one ZIP. It also includes the original upload, the run record, and a row removal log when there are rows to log. Download the ZIP before closing the page or switching to another list.
 
 The app reuses the local movie cache and saved lookup outcomes. New IDs need the same TMDB token as the command line. The app keeps the project candidate CSV and the CLI recommendation reports in place. It can update the shared movie cache and acquisition history in `out/`, so let an app run finish before starting a CLI run. The run record in the ZIP includes the acquisition counts and timing when this upload fetched data. [App entry point](app.py)
 
@@ -82,26 +82,21 @@ The app reuses the local movie cache and saved lookup outcomes. New IDs need the
 
 | Default path | What to look for |
 | --- | --- |
-| `out/movies.acquisition.json` | The latest fetch timing and counts, plus the last known outcome for each unresolved ID. The command writes this report when it makes requests. |
-| `out/movies.quality.csv` | Affected movie IDs, film titles, release years when available, and the effect of each issue. A header-only report means no films were flagged. |
-| `out/recommendation_exclusions.md` | What happened to each candidate row and why films missed either shortlist. |
+| `out/recommendation.md` | Start here for the decision, shortlists with reasons, talent signals, and evidence limits. |
+| `out/rankings.xlsx` | One row per option on the **Bundles** and **Standalones** tabs. Compare ranks and outcomes across both windows, or filter either result column to **Shortlisted**. |
+| `out/recommendation_exclusions.md` | What happened to candidate rows, which films need review, and why films missed either shortlist. |
+
+The workbook lists the observed titles behind each bundle's score for both windows. On the standalone tab, **Source gross** is the value we received and **Usable gross** is the amount that passed the data checks. Notebook 04 has the supporting tests for scoring, bundle strength, genres, and talent.
+
+Keep `out/run.json` to reproduce the results. It records the inputs, settings, checks, report fingerprints, and timing. When the pipeline makes requests, it also writes `out/movies.acquisition.json` with fetch timings and the latest known lookup outcomes.
 
 The raw cache (`data/raw/movies.jsonl`) and removal log (`id_list_removals.csv`) are working files shared with the notebooks. A repeat run reuses saved entries. With a TMDB token, it retries uncached IDs. Without a token, it can replay a saved list when every uncached ID has a recorded outcome. Keep the candidate CSV, cache, removal log, and any acquisition record together to reproduce a snapshot. Git ignores these local records and the reports in `out/`.
 
-The recommendation and supporting files also go in `out/`.
-
-| Saved files | What they show |
-| --- | --- |
-| `all_years_bundles.csv`, `all_years_standalones.csv`, `2000_onward_bundles.csv`, `2000_onward_standalones.csv` | All candidate options, with ranks where eligible and reasons for inclusion or exclusion. Filter `outcome` to `Shortlisted` for the picks. In the standalone files, `raw_gross` is the source value and `reported_gross` is the usable amount. |
-| `shortlisted_bundle_films.csv`, `bundle_best_film_omission.csv` | Scores and financial evidence for the individual films behind each shortlisted bundle, plus the film removed from each eligible bundle in the strongest-film test. |
-| `talent_detail.csv`, `genre_*.csv` | Credit counts, model comparisons, genre overlap, and the evidence behind each talent signal. |
-| `shortlist_changes.csv`, `scoring_sensitivity.csv` | Which options entered, left, or moved and what happened to the ratings decision when the date window or scoring rule changed. |
-| `recommendation.md` | The decision, shortlists with reasons, talent signals, and main evidence limits. The command also prints this summary. |
-| `run.json` | Input and output fingerprints, analysis settings, check results, and separate fetch and analysis timings. |
+If upgrading an existing checkout, archive any old report CSVs in `out/` and `data/raw/movies.recommendation/`, plus `data/raw/movies.quality.csv`. The new runs publish the workbook and show film issues in the exclusions report.
 
 ### Review the evidence before using the shortlists
 
-In `out/recommendation_exclusions.md`, open **Film data issues to review** and **Evidence left for Adjoa**. The first lists individual film issues. The second shows how many bundles and standalones qualify in each release window and how many shortlist spots are unfilled.
+Run the pipeline for `out/recommendation_exclusions.md`, or run Notebook 04 for `data/raw/recommendation_exclusions.md`. Open **Film data issues to review** for individual film issues and **Evidence left for Adjoa** for how many bundles and standalones qualify in each release window and how many shortlist spots are unfilled.
 
 - **Missing or invalid data.** A film without a usable release date stays out of both windows. A dated, released film with unusable rating inputs stays unscored and can make its bundle ineligible. For financial summaries, keep each positive, finite dollar amount. Missing, zero, or invalid budget affects only calculations that need budget. For example, a film with valid gross and a zero budget still counts toward median gross. Gross less budget needs both amounts.
 - **Provisional.** Compare the flagged TMDB records before relying on that window’s shortlist or ratings preference. A shared title and year calls for review, and both movie IDs stay visible.
@@ -134,7 +129,7 @@ The notebooks already share code for turning raw responses into tables and runni
 
 The pipeline and all four notebooks use the same candidate matching rules. They match the valid IDs in the current CSV to the saved TMDB records and stop if a current candidate has multiple cache entries. Older films can stay in the cache for future reuse. Notebook 02 labels its whole-cache raw duplicate audit separately.
 
-Open Notebook 04 and choose **Run All** to review the same analysis on the saved inputs. The notebook and CLI share the candidate loader, analysis, and report writer. The notebook saves its copies under `data/raw/movies.recommendation/`, writes `data/raw/movies.quality.csv`, and updates its [exclusions report](docs/recommendation_exclusions.md).
+Open Notebook 04 and choose **Run All** to review the same analysis on the saved inputs. The notebook and CLI share the candidate loader, analysis, and report writer. The notebook saves `recommendation.md`, `rankings.xlsx`, and `run.json` under `data/raw/movies.recommendation/`. Its exclusions report sits beside the cache at `data/raw/recommendation_exclusions.md`.
 
 To open JupyterLab with Docker, use the image built above and open the link printed in the terminal. With local uv, run `uv run --locked jupyter lab`.
 

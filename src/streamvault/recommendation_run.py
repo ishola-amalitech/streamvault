@@ -24,7 +24,9 @@ from streamvault.recommendation_inputs import (
     CUTOFF, CandidateSnapshot, RecommendationInputs, load_recommendation_inputs,
     read_candidate_snapshot, recommendation_inputs,
 )
-from streamvault.recommendation_reports import build_report_tables, recommendation_summary, write_exclusions_report
+from streamvault.recommendation_reports import (
+    build_rankings, recommendation_summary, write_exclusions_report, write_rankings,
+)
 from streamvault.recommendation_talent import (
     GENRE_MODEL_MINIMUM, GENRE_SUMMARY_MINIMUM, TALENT_GROUP_MINIMUM, TALENT_TITLE_MINIMUM,
     TalentEvidence, review_talent,
@@ -49,7 +51,7 @@ class RecommendationRun:
     summary: str
     directory: Path
     exclusions_path: Path
-    quality_path: Path
+    rankings_path: Path
     record: dict[str, Any]
 
 
@@ -110,34 +112,27 @@ def run_recommendation(
     record_stage_time("Review genre and talent")
     tests = test_scoring_choices(inputs, results)
     record_stage_time("Test scoring alternatives")
-    candidates, details, candidate_checks = build_report_tables(inputs, results, talent, tests)
+    rankings, candidate_checks = build_rankings(inputs, results)
     summary = recommendation_summary(inputs, results, talent)
-    record_stage_time("Prepare candidate and detail reports")
+    record_stage_time("Prepare the rankings and recommendation")
 
     # Finish all analysis checks before publishing, and reject an input edit during the run.
     if recommendation_inputs(config) != inputs.input_sha256:
         raise ValueError("A saved input changed during analysis. Run StreamVault again.")
 
-    directory = config.cache_file.with_suffix(".recommendation")
-    exclusions = config.project_root / "docs" / "recommendation_exclusions.md"
-    quality = config.cache_file.with_suffix(".quality.csv")
-    if output_dir is not None:
-        directory = output_dir
-        exclusions = directory / exclusions.name
-        quality = directory / quality.name
+    # Notebook runs keep their generated reports beside the saved cache.
+    directory = output_dir if output_dir is not None else config.cache_file.with_suffix(".recommendation")
+    exclusions_dir = directory if output_dir is not None else config.cache_file.parent
+    exclusions = exclusions_dir / "recommendation_exclusions.md"
+    rankings_path = directory / "rankings.xlsx"
+    # Publish the run record last so its fingerprints describe the finished reports.
+    write_rankings(rankings_path, rankings)
     write_exclusions_report(exclusions, inputs.source_audit, results.film_outcomes, results.window_evidence, inputs.quality_issues)
-    write_text_atomic(quality, inputs.quality_issues.to_csv(index=False))
     write_text_atomic(directory / "recommendation.md", summary)
-
-    # Write each file atomically. Publish the run record last so it describes a completed set.
-    for filename, frame in (candidates | details).items():
-        write_text_atomic(directory / filename, frame.to_csv())
-    candidate_hashes = {name: fingerprint(directory / name) for name in candidates}
-    detail_hashes = {name: fingerprint(directory / name) for name in details}
     report_hashes = {
         "recommendation_sha256": fingerprint(directory / "recommendation.md"),
         "exclusions_report_sha256": fingerprint(exclusions),
-        "quality_report_sha256": fingerprint(quality),
+        "rankings_sha256": fingerprint(rankings_path),
     }
     code = _code_version(config.project_root)
     record_stage_time("Save reports and check fingerprints")
@@ -164,7 +159,9 @@ def run_recommendation(
         for key in ("recorded_at_utc", "fetch_seconds", "requested", "fetched", "lookup_misses", "request_failures")
     }
     fetch_record["status"] = "Matched acquisition run" if fetch_measured else "No measured acquisition for this snapshot"
-    versions = {"python": python_version(), **{name: version(name) for name in ("numpy", "pandas", "scikit-learn")}}
+    versions = {"python": python_version(), **{
+        name: version(name) for name in ("numpy", "pandas", "scikit-learn", "xlsxwriter")
+    }}
     timestamps = inputs.cache_timestamps
     checks = pd.concat([inputs.checks, results.checks, talent.checks, candidate_checks], ignore_index=True)
     record = {
@@ -193,8 +190,6 @@ def run_recommendation(
         "shortlist_leaders": json.loads(tests.leaders.to_json(orient="records")),
         "shortlist_changes": json.loads(tests.shortlist_changes.to_json(orient="records")),
         **report_hashes,
-        "candidate_csv_sha256": candidate_hashes,
-        "detail_csv_sha256": detail_hashes,
         "acquisition": fetch_record,
         "cached_analysis_seconds": sum(stage_seconds.values()),
         "cached_timing_boundary": CACHED_TIMING_BOUNDARY,
@@ -202,4 +197,4 @@ def run_recommendation(
         "cached_scale_check": _matching_benchmark(config.output_dir, inputs.input_sha256, code, versions),
     }
     write_record(directory / "run.json", record)
-    return RecommendationRun(inputs, results, talent, tests, summary, directory, exclusions, quality, record)
+    return RecommendationRun(inputs, results, talent, tests, summary, directory, exclusions, rankings_path, record)

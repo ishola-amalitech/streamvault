@@ -110,9 +110,8 @@ def main() -> None:
     reference_run: dict[str, Any] | None = None
     same_result_fields = (
         "input_sha256", "windows", "window_evidence", "checks", "comparison_results",
-        "shortlist_leaders", "shortlist_changes", "candidate_csv_sha256",
-        "detail_csv_sha256", "exclusions_report_sha256", "recommendation_sha256",
-        "quality_report_sha256", "cached_timing_boundary",
+        "shortlist_leaders", "shortlist_changes", "rankings_sha256",
+        "exclusions_report_sha256", "recommendation_sha256", "cached_timing_boundary",
     )
 
     with TemporaryDirectory(prefix="streamvault-types-") as directory:

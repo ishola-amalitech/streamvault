@@ -1,10 +1,11 @@
-import csv
 import json
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import AsyncMock, patch
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 from streamvault.cache import iter_cached_records
 from streamvault.config import CONFIG
@@ -14,6 +15,23 @@ from streamvault.main import run
 from streamvault.normalize import normalize_movie_records
 from streamvault.recommendation_run import run_recommendation
 from streamvault.run_record import read_record, snapshot_inputs, write_record
+
+
+def worksheet_rows(workbook: ZipFile, sheet: int) -> list[dict[str, str]]:
+    # Read the values back from the saved Excel file without adding a reader dependency.
+    strings = ElementTree.fromstring(workbook.read("xl/sharedStrings.xml"))
+    shared_text = ["".join(node.itertext()) for node in strings]
+    page = ElementTree.fromstring(workbook.read(f"xl/worksheets/sheet{sheet}.xml"))
+    rows = []
+    for row in page.findall(".//{*}row"):
+        values = {}
+        for cell in row:
+            value = cell.findtext("{*}v")
+            if value is not None:
+                column = cell.attrib["r"].rstrip("0123456789")
+                values[column] = shared_text[int(value)] if cell.get("t") == "s" else value
+        rows.append(values)
+    return [dict(zip(rows[0].values(), (row.get(column, "") for column in rows[0]), strict=True)) for row in rows[1:]]
 
 
 class MainTests(unittest.IsolatedAsyncioTestCase):
@@ -113,10 +131,9 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                 encoding="utf-8",
             )
             with patch("streamvault.main.CONFIG", config):
-                await run()
+                analysis = await run()
 
-            with (config.output_dir / "movies.quality.csv").open(newline="", encoding="utf-8") as report:
-                issues = {(row["movie_id"], row["issue"]) for row in csv.DictReader(report)}
+            issues = {(str(row.movie_id), row.issue) for row in analysis.inputs.quality_issues.itertuples()}
             self.assertEqual(issues, {
                 ("1", "Missing rating"),
                 ("1", "Possible duplicate film"),
@@ -131,7 +148,9 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             })
             report = read_record(config.output_dir / "run.json")
             self.assertEqual(report["window_evidence"]["2000 onward"]["Films flagged for duplicate review"], 2)
-            self.assertIn("Missing release date", (config.output_dir / "recommendation_exclusions.md").read_text())
+            exclusions = (config.output_dir / "recommendation_exclusions.md").read_text()
+            for _, issue in issues:
+                self.assertIn(issue, exclusions)
 
     async def test_acquisition_record_follows_the_latest_outcome(self) -> None:
         with TemporaryDirectory() as directory:
@@ -191,6 +210,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             for key in range(1, 6):
                 movies[key - 1]["belongs_to_collection"] = {"id": key, "name": f"Bundle {key}"}
             movies[-1]["belongs_to_collection"] = movies[0]["belongs_to_collection"]
+            movies[6]["title"] = "=1+1"
 
             folder = root / "upload-reports"
             with patch("streamvault.main.fetch_movies", new_callable=AsyncMock) as fetch:
@@ -212,10 +232,24 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             baseline = {(row["window"], row["conclusion"]) for row in record["comparison_results"] if row["scenario"] == "Baseline"}
             self.assertIn(("All years", "Favors standalones"), baseline)
             self.assertIn(("2000 onward", "Insufficient evidence to favor either group"), baseline)
-            analysis_csvs = record["candidate_csv_sha256"] | record["detail_csv_sha256"]
-            self.assertEqual(len(analysis_csvs), 12)
-            self.assertEqual({path.name for path in folder.glob("*.csv")}, set(analysis_csvs) | {"movies.quality.csv"})
-            self.assertIn("The ratings conclusion changes", (folder / "recommendation.md").read_text())
+            self.assertEqual({path.name for path in folder.iterdir()}, {
+                "rankings.xlsx", "recommendation.md", "recommendation_exclusions.md", "run.json",
+            })
+            with ZipFile(analysis.rankings_path) as workbook:
+                sheets = ElementTree.fromstring(workbook.read("xl/workbook.xml"))
+                self.assertEqual([sheet.get("name") for sheet in sheets.findall(".//{*}sheet")], ["Bundles", "Standalones"])
+                bundles = {row["Collection ID"]: row for row in worksheet_rows(workbook, 1)}
+                standalones = {row["Movie ID"]: row for row in worksheet_rows(workbook, 2)}
+                self.assertEqual(bundles["1"]["All years observed films"], "Film 11 | Film 1")
+                self.assertEqual(bundles["1"]["2000 onward observed films"], "Film 1")
+                self.assertEqual(standalones["6"]["All years rank"], "1")
+                self.assertEqual(standalones["6"]["2000 onward rank"], "")
+                self.assertEqual(standalones["6"]["2000 onward result"], "Before 1 January 2000")
+                self.assertEqual(standalones["7"]["Film"], "=1+1")
+                self.assertEqual(standalones["7"]["2000 onward rank"], "1")
+            summary = (folder / "recommendation.md").read_text()
+            self.assertIn("The ratings conclusion changes", summary)
+            self.assertIn("strongest film set aside", summary)
             exclusions = (folder / "recommendation_exclusions.md").read_text()
             self.assertIn("TMDB request failed: HTTP 503", exclusions)
             self.assertIn("Duplicate TMDB movie ID", exclusions)
@@ -223,13 +257,17 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
 
             # The notebook uses the same calculation on the saved snapshot but writes separate files.
             notebook_dir = config.cache_file.with_suffix(".recommendation")
+            notebook_exclusions = config.cache_file.with_name("recommendation_exclusions.md")
             self.assertFalse(notebook_dir.exists())
             self.assertFalse(config.cache_file.with_suffix(".quality.csv").exists())
-            self.assertFalse((root / "docs/recommendation_exclusions.md").exists())
+            self.assertFalse(notebook_exclusions.exists())
             notebook_run = run_recommendation(config)
             self.assertEqual(notebook_run.directory, notebook_dir)
+            self.assertEqual(notebook_run.exclusions_path, notebook_exclusions)
+            self.assertEqual(notebook_exclusions.read_text(), exclusions)
+            self.assertFalse((root / "docs/recommendation_exclusions.md").exists())
             self.assertEqual(notebook_run.record["comparison_results"], record["comparison_results"])
-            for field in ("candidate_csv_sha256", "detail_csv_sha256", "exclusions_report_sha256"):
+            for field in ("rankings_sha256", "recommendation_sha256", "exclusions_report_sha256"):
                 self.assertEqual(notebook_run.record[field], record[field])
 
     async def test_without_token_replay_requires_an_outcome_for_each_uncached_id(self) -> None:

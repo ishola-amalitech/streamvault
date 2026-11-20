@@ -38,7 +38,11 @@ def prepare_download(name: str, contents: bytes) -> tuple[str, bytes]:
             archive.write(source, f"input/{source.name}")
             if config.removals_file.is_file():
                 archive.write(config.removals_file, "row-removals.csv")
-            for report in sorted(analysis.directory.iterdir()):
+            # Include only the reports from this run in the download.
+            for report in (
+                analysis.directory / "recommendation.md", analysis.rankings_path,
+                analysis.exclusions_path, analysis.directory / "run.json",
+            ):
                 archive.write(report, report.name)
         return analysis.summary, download.getvalue()
 

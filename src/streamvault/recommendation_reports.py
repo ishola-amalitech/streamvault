@@ -1,5 +1,6 @@
 """Prepare the detailed recommendation reports Adjoa can inspect after a run."""
 
+from datetime import datetime
 from html import escape
 from pathlib import Path
 
@@ -8,10 +9,10 @@ import pandas as pd
 from streamvault.diagnostics import raise_for_failed_checks, run_data_checks
 from streamvault.movie_quality import financial_inputs
 from streamvault.recommendation import BUNDLE_TARGET, COMPARISON_MINIMUM, ON_SHORTLIST, STANDALONE_TARGET
-from streamvault.recommendation_analysis import Recommendation, ScoringTests
-from streamvault.recommendation_inputs import ALL_YEARS, RECENT, RecommendationInputs
+from streamvault.recommendation_analysis import Recommendation
+from streamvault.recommendation_inputs import ALL_YEARS, RecommendationInputs
 from streamvault.recommendation_talent import TalentEvidence
-from streamvault.run_record import write_text_atomic
+from streamvault.run_record import atomic_output_path, write_text_atomic
 
 
 def _markdown_table(frame: pd.DataFrame) -> str:
@@ -44,7 +45,7 @@ def write_exclusions_report(
     source_exclusions["Source value"] = source_exclusions["Source value"].fillna("").replace("", "(blank)")
 
     film_exclusions = film_outcomes.loc[film_outcomes[windows].ne(ON_SHORTLIST).any(axis=1)].copy()
-    film_exclusions["title"] = film_exclusions["title"].fillna("(title unavailable)")
+    film_exclusions["title"] = film_exclusions["title"].astype("string").fillna("(title unavailable)")
     film_exclusions = film_exclusions.sort_values(["title", "movie_id"]).rename(
         columns={"movie_id": "Movie ID", "title": "Film"}
     )
@@ -84,18 +85,16 @@ def write_exclusions_report(
     ]))
 
 
-def prepare_standalone_report(candidates: pd.DataFrame, film_genres: pd.Series) -> pd.DataFrame:
-    """Keep the original gross beside the usable amount for each standalone candidate."""
+def prepare_standalone_report(candidates: pd.DataFrame) -> pd.DataFrame:
+    """Keep one row per standalone with amounts that do not change by window."""
     standalone_base = candidates.loc[candidates["collection_id"].isna()].reindex(columns=[
-        "movie_id", "title", "release_year", "vote_average", "vote_count", "popularity", "budget", "revenue",
+        "movie_id", "title", "release_year", "vote_average", "vote_count", "budget", "revenue",
     ]).set_index("movie_id")
-    # Include standalone films outside this window. Their original and usable dollars
-    # still tell Adjoa what data is available if the film is considered in another run.
-    standalone_base["reported_gross"] = financial_inputs(standalone_base)["revenue"]
-    standalone_base = standalone_base.rename(columns={"vote_average": "raw_rating", "revenue": "raw_gross"})
-    standalone_base["genres"] = film_genres
-    standalone_base["limitation"] = "Audience and box office evidence from this list. Licensing price unknown."
-    return standalone_base
+    # Keep the original gross beside the usable one, even for films outside a window.
+    amounts = financial_inputs(standalone_base)
+    standalone_base["reported_gross"] = amounts["revenue"]
+    standalone_base["reported_budget"] = amounts["budget"]
+    return standalone_base.rename(columns={"vote_average": "raw_rating", "revenue": "raw_gross"})
 
 
 def standalone_candidate_report(
@@ -107,7 +106,7 @@ def standalone_candidate_report(
     """Add the score, rank, and selection outcome for one window."""
     # Join by ID so a film outside this window keeps its original data and has a blank rank.
     standalone_report = standalone_base.join(
-        scored.set_index("movie_id")[["adjusted_rating", "gross_minus_budget", "gross_difference_to_budget"]],
+        scored.set_index("movie_id")[["adjusted_rating", "gross_minus_budget"]],
         validate="one_to_one",
     ).join(ranking.set_index("movie_id")[["rank"]], validate="one_to_one")
     standalone_report["outcome"] = standalone_report.index.map(outcomes)
@@ -116,143 +115,145 @@ def standalone_candidate_report(
 
 
 def bundle_candidate_report(
-    all_collections: pd.Series,
-    scored: pd.DataFrame,
-    collection_names: pd.Series,
-    genre_links: pd.DataFrame,
-    bundle_summary: pd.DataFrame,
-    ranking: pd.DataFrame,
+    collection_names: pd.Series, scored: pd.DataFrame, bundle_summary: pd.DataFrame, ranking: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Record every bundle and the observed films behind its score in one window."""
-    # Each bundle row lists only the observed films in this release window.
-    members = scored.loc[scored["collection_id"].notna()].sort_values(["release_date", "movie_id"]).copy()
-    film_title = members["title"].astype("string").fillna("(title unavailable)")
-    members["member"] = members["movie_id"].astype("string") + " " + film_title
-    # Keep the reason paired with the film ID so an ineligible bundle can be checked.
-    members["unscored"] = (members["member"] + " (" + members["score_exclusion"] + ")").where(
-        members["adjusted_rating"].isna(), "",
-    )
-    members["numeric_popularity"] = pd.to_numeric(members["popularity"], errors="coerce")
-    evidence = members.groupby("collection_id").agg(
-        observed_members=("member", " | ".join),
-        unscored_members=("unscored", lambda values: " | ".join(values[values.ne("")])),
-        first_year=("release_year", "min"),
-        last_year=("release_year", "max"),
-        median_original_rating=("vote_average", "median"),
-        median_popularity=("numeric_popularity", "median"),
-    )
-    bundle_tags = genre_links.merge(
-        members[["movie_id", "collection_id"]], on="movie_id", how="inner", validate="many_to_one",
-    ).drop_duplicates(["collection_id", "genre_id"]).groupby("collection_id")["genre"].agg(" | ".join)
-    evidence["genres"] = bundle_tags
-    bundle_report = all_collections.rename("resolved_films").to_frame().join(
+    """Record the observed films and rank for each bundle in this window."""
+    members = scored.loc[scored["collection_id"].notna()].sort_values(["release_date", "movie_id"])
+    titles = members["title"].astype("string").fillna("(title unavailable)")
+    observed = titles.groupby(members["collection_id"]).agg(" | ".join).rename("observed_members")
+    report = collection_names.rename("collection_name").to_frame().join(
         bundle_summary.set_index("collection_id").drop(columns="collection_name"),
         validate="one_to_one",
-    ).join(evidence, validate="one_to_one").join(
+    ).join(observed, validate="one_to_one").join(
         ranking.set_index("collection_id")[["rank"]], validate="one_to_one",
     )
-    bundle_report.insert(0, "collection_name", bundle_report.index.map(collection_names))
-    for column in ("films", "scored_films", "films_with_gross", "films_with_budget_and_gross"):
-        bundle_report[column] = bundle_report[column].fillna(0).astype(int)
-    # A bundle can exist in the cache but have no dated, released members in this window.
-    bundle_report["films_outside_window"] = bundle_report["resolved_films"] - bundle_report["films"]
-    bundle_report["rank"] = bundle_report["rank"].astype("Int64")
-    rank = bundle_report["rank"]
-    bundle_report["outcome"] = "Some observed films could not be scored"
-    bundle_report.loc[bundle_report["films"].eq(0), "outcome"] = "No observed films in this release window"
-    bundle_report.loc[rank.gt(BUNDLE_TARGET), "outcome"] = "Ranked below the top " + str(BUNDLE_TARGET)
-    bundle_report.loc[rank.le(BUNDLE_TARGET), "outcome"] = ON_SHORTLIST
-    bundle_report["limitation"] = "Observed films only. Full package and licensing price unknown."
-    bundle_report.loc[bundle_report["films"].eq(1), "limitation"] = (
-        "Rating based on one observed film. Full package and licensing price unknown."
-    )
-    return bundle_report
+    for column in ("films", "films_with_gross"):
+        report[column] = report[column].fillna(0).astype(int)
+
+    # An out-of-window bundle has no observed films. A bundle with unscored films has no rank.
+    rank = report["rank"].astype("Int64")
+    report["rank"] = rank
+    report["outcome"] = "Some observed films could not be scored"
+    report.loc[report["films"].eq(0), "outcome"] = "No observed films in this release window"
+    report.loc[rank.gt(BUNDLE_TARGET), "outcome"] = f"Ranked below the top {BUNDLE_TARGET}"
+    report.loc[rank.le(BUNDLE_TARGET), "outcome"] = ON_SHORTLIST
+    return report
 
 
-
-def build_report_tables(
-    inputs: RecommendationInputs, results: Recommendation, talent: TalentEvidence, tests: ScoringTests,
-) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame], pd.DataFrame]:
-    """Build the complete candidate CSVs and the detail tables that explain them."""
-    tables = inputs.tables
-    candidates = inputs.candidates
-    collection_names = inputs.collection_names
-    file_windows = {ALL_YEARS: "all_years", RECENT: "2000_onward"}
-
-    # Attach legible genre labels while preserving the genre IDs used for joins.
-    genre_names = tables.genres.set_index("genre_id")["genre_name"]
-    genre_links = tables.movie_genres.assign(
-        genre=tables.movie_genres["genre_id"].map(genre_names).fillna(
-            "Genre ID " + tables.movie_genres["genre_id"].astype("string"),
-        ),
-    ).sort_values(["genre", "genre_id"])
-    film_genres = genre_links.groupby("movie_id")["genre"].agg(" | ".join)
-    # Include candidates outside a window so the exported files also explain their exclusion.
-    standalone_base = prepare_standalone_report(candidates, film_genres)
-    all_collections = candidates["collection_id"].value_counts()
-    candidate_tables = {}
-    candidate_checks = {}
+def build_rankings(
+    inputs: RecommendationInputs, results: Recommendation,
+) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
+    """Build two sheets with the same candidates aligned by ID across windows."""
+    checks = {}
+    bundle_windows = {}
+    standalone_windows = {}
+    standalone_base = prepare_standalone_report(inputs.candidates)
     outcomes = results.film_outcomes.set_index("movie_id")
+
     for window, scored in results.scored_windows.items():
-        standalone_report = standalone_candidate_report(
+        bundles = bundle_candidate_report(
+            inputs.collection_names, scored, results.bundle_summaries[window], results.ranked_bundles[window],
+        )
+        standalones = standalone_candidate_report(
             standalone_base, scored, results.ranked_standalones[window], outcomes[window],
         )
-        bundle_report = bundle_candidate_report(
-            all_collections, scored, collection_names, genre_links, results.bundle_summaries[window], results.ranked_bundles[window],
-        )
+        bundle_windows[window] = bundles
+        standalone_windows[window] = standalones
         for kind, frame, ranked, target in (
-            ("Standalone", standalone_report, results.ranked_standalones[window], STANDALONE_TARGET),
-            ("Bundle", bundle_report, results.ranked_bundles[window], BUNDLE_TARGET),
+            ("Bundles", bundles, results.ranked_bundles[window], BUNDLE_TARGET),
+            ("Standalones", standalones, results.ranked_standalones[window], STANDALONE_TARGET),
         ):
-            filename = f"{file_windows[window]}_{kind.lower()}s.csv"
-            frame = frame.sort_index().sort_values("rank", kind="stable")
-            candidate_tables[filename] = frame
-            shortlisted = frame["outcome"].eq(ON_SHORTLIST)
-            label = "Top three by median adjusted rating" if kind == "Bundle" else "Top five by adjusted rating"
-            frame["duplicate_review"] = (
-                "Provisional pending duplicate review"
-                if results.window_evidence.loc[window, "Films flagged for duplicate review"]
-                else ""
-            )
-            frame["shortlist_reason"] = pd.Series(label, index=frame.index, dtype="string").where(shortlisted)
             # A blank rank must agree with the rankings and with the recorded outcome.
             expected_ranks = ranked.set_index(frame.index.name)["rank"].reindex(frame.index).astype("Int64")
-            candidate_checks[f"{window}: {kind.lower()} report agrees with the ranked candidates"] = (
+            shortlisted = frame["outcome"].eq(ON_SHORTLIST)
+            checks[f"{window}: {kind} sheet agrees with the ranked candidates"] = (
                 frame.index.is_unique and frame["outcome"].notna().all()
                 and frame["rank"].equals(expected_ranks)
                 and frame["rank"].le(target).fillna(False).eq(shortlisted).all(),
                 f"{len(frame)} candidate rows, {int(shortlisted.sum())} shortlisted",
             )
+            if results.windows_with_duplicates[window]:
+                frame["review"] = "Provisional pending duplicate review"
 
-    candidate_stage = "Before publishing the candidate tables"
-    candidate_report = run_data_checks(candidate_stage, candidate_checks)
-    raise_for_failed_checks(candidate_stage, candidate_report)
-
-    # Save the score and usable dollars of each film that contributed to a shortlisted bundle.
-    bundle_members = pd.concat(results.shortlisted_bundle_films, names=["window", "source_index"]).reset_index(
-        level="source_index", drop=True,
-    )
-    bundle_members = bundle_members.set_index(["collection_id", "movie_id"], append=True)
-    member_columns = [
-        "bundle_rank", "title", "release_year", "vote_average", "vote_count", "adjusted_rating",
-        "reported_budget", "reported_gross", "gross_minus_budget", "gross_difference_to_budget", "popularity",
-    ]
-
-    # Keep full tables in readable CSVs. Use IDs in indexes so similarly named films or people stay distinct.
-    detail_tables = {
-        "shortlisted_bundle_films.csv": bundle_members[member_columns],
-        "bundle_best_film_omission.csv": pd.concat(results.omission_details, names=["window", "collection_id"]),
-        "genre_benchmark.csv": talent.benchmarks.set_index(["window", "outcome"]),
-        "genre_summary.csv": pd.concat(talent.genres, names=["window", "genre_id"]),
-        "genre_overlap.csv": pd.concat({
-            window: counts.rename_axis(index="genre_id", columns="other_genre_id").stack().rename("shared_films")
-            for window, counts in talent.genre_overlaps.items()
-        }, names=["window", "genre_id", "other_genre_id"]),
-        "talent_detail.csv": pd.concat(talent.people, names=["window", "role", "person_id"]),
-        "shortlist_changes.csv": tests.shortlist_changes.set_index(["scenario", "window", "type", "candidate_id"]),
-        "scoring_sensitivity.csv": tests.comparisons.set_index(["scenario", "window"]),
+    # Bundle membership can change at the cutoff. Standalone film details are shared.
+    bundle_detail = {
+        "films": "films seen", "observed_members": "observed films",
+        "lowest_adjusted_rating": "lowest score", "median_votes": "middle vote count",
+        "median_reported_gross": "typical film gross ($)", "films_with_gross": "films with gross",
     }
-    return candidate_tables, detail_tables, candidate_report
+    standalone_detail = {
+        "release_year": "Release year", "raw_rating": "Audience rating", "vote_count": "Votes",
+        "reported_budget": "Production budget ($)", "raw_gross": "Source gross",
+        "reported_gross": "Usable gross ($)", "gross_minus_budget": "Gross less budget ($)",
+    }
+    sheets = {
+        "Bundles": _rankings_sheet(
+            bundle_windows, "collection_name", "Bundle", "Collection ID",
+            "median_adjusted_rating", bundle_detail, {},
+        ),
+        "Standalones": _rankings_sheet(
+            standalone_windows, "title", "Film", "Movie ID", "adjusted_rating", {}, standalone_detail,
+        ),
+    }
+    stage = "Before publishing the rankings workbook"
+    report = run_data_checks(stage, checks)
+    raise_for_failed_checks(stage, report)
+    return sheets, report
+
+
+def _rankings_sheet(
+    windows: dict[str, pd.DataFrame], title_field: str, title_label: str, id_label: str, score_field: str,
+    window_details: dict[str, str], shared_details: dict[str, str],
+) -> pd.DataFrame:
+    # Match the same ID across windows and put the two sets of ranks next to the title.
+    all_years = windows[ALL_YEARS]
+    titles = all_years[title_field].astype("string").fillna("(name unavailable)").rename(title_label)
+    parts = [titles.to_frame()]
+    for labels in ({"rank": "rank", score_field: "score", "outcome": "result"}, {"review": "review", **window_details}):
+        for window, frame in windows.items():
+            fields = {key: f"{window} {label}" for key, label in labels.items() if key in frame}
+            parts.append(frame[list(fields)].rename(columns=fields))
+
+    parts.append(all_years[list(shared_details)].rename(columns=shared_details))
+    sheet = pd.concat(parts, axis="columns")
+    ranks = [f"{window} rank" for window in windows]
+    # Keep numeric ID order if a candidate has no rank in either window.
+    sheet = sheet.sort_index().sort_values(ranks)
+    sheet[id_label] = sheet.index.astype(str)
+    return sheet
+
+
+def write_rankings(path: Path, sheets: dict[str, pd.DataFrame]) -> None:
+    """Write a filterable Excel workbook with ranks for both windows side by side."""
+    # Titles and other source values are plain text. Excel should never run them as formulas or links.
+    options = {"strings_to_formulas": False, "strings_to_urls": False}
+    with (
+        atomic_output_path(path) as temporary,
+        temporary.open("wb") as destination,
+        pd.ExcelWriter(destination, engine="xlsxwriter", engine_kwargs={"options": options}) as writer,
+    ):
+        # Use a fixed creation date so identical evidence gives identical workbook bytes.
+        writer.book.set_properties({"created": datetime(2000, 1, 1)})
+        score = writer.book.add_format({"num_format": "0.000"})
+        dollars = writer.book.add_format({"num_format": "#,##0"})
+        wrapped = writer.book.add_format({"text_wrap": True, "valign": "top"})
+        for name, sheet in sheets.items():
+            sheet.to_excel(writer, sheet_name=name, index=False)
+            page = writer.sheets[name]
+            page.freeze_panes(1, 1)
+            if len(sheet):
+                page.autofilter(0, 0, len(sheet), len(sheet.columns) - 1)
+            for index, label in enumerate(sheet.columns):
+                width = max(14, len(label) + 4)
+                cell_format = None
+                if label in ("Bundle", "Film") or label.endswith(("result", "review", "observed films")):
+                    width = 65 if label.endswith("observed films") else max(width, 34)
+                    cell_format = wrapped
+                elif label.endswith(("score", "rating")):
+                    cell_format = score
+                elif label.endswith("($)"):
+                    cell_format = dollars
+                page.set_column(index, index, width, cell_format)
 
 
 def recommendation_summary(
@@ -274,7 +275,9 @@ def recommendation_summary(
     ]
     if compared["conclusion"].nunique() > 1:
         lines += ["", "**The ratings conclusion changes when the 2000 cutoff is applied.**"]
+    lines += ["", "Scores are out of 10 and give less weight to ratings with fewer votes."]
 
+    supported_cast = []
     for window, row in compared.iterrows():
         lines += [
             "", f"## {window}", "",
@@ -289,6 +292,9 @@ def recommendation_summary(
             )
         else:
             lines.append(f"A firm comparison needs at least {COMPARISON_MINIMUM} eligible options on each side.")
+        if pd.notna(row.interval_low):
+            omission = results.omission_comparison.at[window, "conclusion"]
+            lines.append(f"With each eligible bundle's strongest film set aside, the result was **{omission}**.")
         if results.windows_with_duplicates[window]:
             lines.append("Review the possible duplicate films in the exclusions report before using these picks.")
 
@@ -315,6 +321,7 @@ def recommendation_summary(
         # List names only when the positive gap survived removing the person's largest group.
         people = talent.people[window].reset_index()
         supported = people.loc[people["rating_signal"].eq("Above benchmark in both checks")]
+        supported_cast.append(set(supported.loc[supported["role"].eq("Lead cast"), "person_id"]))
         lines += ["", "### Talent evidence", ""]
         if supported.empty:
             lines.append("No director or lead actor stayed above the ratings benchmark with enough evidence in this window.")
@@ -329,13 +336,16 @@ def recommendation_summary(
                     f"The rating gap stayed at {person.rating_after:+.2f} after removing the largest group."
                 )
 
+    if not set.intersection(*supported_cast):
+        lines += ["", "No lead actor stayed ahead of comparable films in both release windows."]
+
     lines += [
         "", "## Evidence limits", "",
         "- The comparison covers the supplied list. Unresolved films could change the results.",
         "- Each bundle represents the installments observed in that window. The studio package may contain more films.",
         "- Scores come from TMDB audience ratings. Historical box office gives context. "
         "Kwame needs licensing quotes to check what fits the $14M budget.",
-        "- See the candidate CSVs for full ranks and the exclusions report for missing or unusable evidence.",
+        "- Open the rankings workbook for both windows side by side and the exclusions report for missing or unusable evidence.",
     ]
     return "\n".join(lines) + "\n"
 

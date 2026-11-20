@@ -154,9 +154,9 @@ async def run(
     print_check_report("Recommendation input checks", analysis.inputs.checks)
     print()
     print(analysis.summary, end="")
-    print(f"\nSaved recommendation and CSVs to {analysis.directory}")
+    print(f"\nRecommendation: {analysis.directory / 'recommendation.md'}")
+    print(f"Full rankings: {analysis.rankings_path}")
     print(f"Exclusions report: {analysis.exclusions_path}")
-    print(f"Film issues: {analysis.quality_path}")
     print(f"Run record: {analysis.directory / 'run.json'}")
     return analysis
 
