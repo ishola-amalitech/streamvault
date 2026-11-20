@@ -86,7 +86,7 @@ async def fetch_movie(
 
         try:
             response = await client.get(
-                f"/movie/{movie_id}",
+                f"{config.movie_endpoint}/{movie_id}",
                 params={"append_to_response": config.append_to_response},
             )
         except httpx.RequestError:

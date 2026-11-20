@@ -16,6 +16,7 @@ class FetchMoviesTests(unittest.IsolatedAsyncioTestCase):
         faster_request_finished = asyncio.Event()
 
         async def respond(request: httpx.Request) -> httpx.Response:
+            self.assertTrue(request.url.path.startswith("/3/films/"))
             movie_id = request.url.path.rsplit("/", 1)[-1]
             if movie_id == "1":
                 # Make the first request finish after the second one.
@@ -26,7 +27,9 @@ class FetchMoviesTests(unittest.IsolatedAsyncioTestCase):
                 return httpx.Response(200, json={"id": 2})
             return httpx.Response({"3": 204, "4": 200, "5": 401}[movie_id])
 
-        settings = replace(CONFIG, max_connections=2, requests_per_second=1000.0)
+        settings = replace(
+            CONFIG, movie_endpoint="/films", max_connections=2, requests_per_second=1000.0,
+        )
         movie_ids = (MovieId(str(number), number + 1) for number in range(1, 6))
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(respond), base_url=CONFIG.api_base_url

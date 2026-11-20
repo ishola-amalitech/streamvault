@@ -11,6 +11,7 @@ from typing import cast
 class AppConfig:
     project_root: Path
     api_base_url: str
+    movie_endpoint: str
     token_env_var: str
     append_to_response: str
     max_connections: int
@@ -42,10 +43,9 @@ class AppConfig:
 
 def _section(config: Mapping[str, object], name: str) -> Mapping[str, object]:
     value = config.get(name)
-    if not isinstance(value, dict) or not all(
-        isinstance(key, str) for key in value
-    ):
+    if not isinstance(value, dict):
         raise ValueError(f"Config section '{name}' must be a table.")
+    # TOML table keys are always strings. The setting readers validate the values.
     return cast(Mapping[str, object], value)
 
 
@@ -103,7 +103,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
 
     try:
         with resolved_config_path.open("rb") as config_file:
-            raw_config: object = tomllib.load(config_file)
+            config: Mapping[str, object] = tomllib.load(config_file)
     except FileNotFoundError as error:
         raise FileNotFoundError(
             f"Configuration file not found: {resolved_config_path}"
@@ -113,12 +113,6 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
             f"Invalid TOML in {resolved_config_path}: {error}"
         ) from error
 
-    if not isinstance(raw_config, dict) or not all(
-        isinstance(key, str) for key in raw_config
-    ):
-        raise ValueError(f"Configuration must be a TOML table: {resolved_config_path}")
-
-    config = cast(Mapping[str, object], raw_config)
     api = _section(config, "api")
     retry = _section(config, "retry")
     paths = _section(config, "paths")
@@ -127,6 +121,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     return AppConfig(
         project_root=project_root,
         api_base_url=_text(api, "base_url"),
+        movie_endpoint=_text(api, "movie_endpoint", default="/movie").rstrip("/"),
         token_env_var=_text(api, "token_env_var"),
         append_to_response=_text(api, "append_to_response"),
         max_connections=_integer(api, "max_connections", minimum=1),
