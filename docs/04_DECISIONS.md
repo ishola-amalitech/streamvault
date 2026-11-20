@@ -1,6 +1,6 @@
 # StreamVault decision record
 
-This record explains where the acquisition, profiling and licensing methods came from, what could change the answer, and what Adjoa can reuse. The [lab brief](../lab_brief.md) defines the fictional assignment. Snapshot evidence and analyst answers live in the [findings](findings.md) and [questions](questions.md) logs.
+This record explains where the acquisition, profiling and licensing methods came from, what could change the answer, and what Adjoa can reuse. The [lab brief](../lab_brief.md) defines the fictional assignment. Snapshot evidence and analyst answers live in the [findings](02_findings.md) and [questions](03_questions.md) logs.
 
 ## Implemented acquisition and preparation
 
@@ -49,7 +49,7 @@ Notebook 03 keeps numeric correlations and the unusual-value sensitivity compari
 
 ### D04 · Keep the canonical types and measure runtime separately
 
-The benchmark guide records the measurements, timing limits, and rerun commands. [Benchmark guide](benchmarks.md)
+The benchmark guide records the measurements, timing limits, and rerun commands. [Benchmark guide](05_benchmarks.md)
 
 Notebook 02's copy-only experiment cut the 112-film movie table by 10.6%. The first 500-title attempt exposed a problem with narrowing IDs. The talent analysis fills blank collection IDs with standalone movie IDs to build film groups. Even when every collection ID fits the smaller type, movie IDs can exceed it. The measured compact version kept both ID columns at their original sizes. It stored repeated release status and language labels once per label, and chose smaller integer types for budget, gross, runtime, and votes only when the values fit. [Profile](../notebooks/02_profile_movie_data.ipynb) · [Memory benchmark](../scripts/benchmark_movie_types.py)
 
@@ -71,7 +71,7 @@ Notebook 04 shows the two-window recommendation and shortlists first. It then sh
 
 Notebook 03 profiles every matched candidate. Its outcome comparisons use dated, released films across all years, and its film counts show how many fall in each window. This keeps missing release details visible in the profile and shows which films contribute to outcome comparisons. Notebook 04 runs the licensing analysis separately for both windows.
 
-Work from the current unique resolved IDs and include dated, released titles. Run the whole analysis separately for all years and for releases on or after 1 January 2000. Apply the cutoff to each installment's release date. Keep the first row for each numeric movie ID and count the film once within each window. Films from 2000 onward are eligible for both windows. Agreement shows sensitivity to the cutoff, and differences can come from changed bundle membership as well as changed outcomes. Eight collections in the current cache cross the cutoff. A pooled window would discard Yaw's comparison. Applying the cutoff addresses the era concern directly, while release-period summaries give context for nominal gross. The candidate list's narrow coverage and mixed provenance limit generalization beyond this pool. [Brief](../lab_brief.md) · [Findings](findings.md)
+Work from the current unique resolved IDs and include dated, released titles. Run the whole analysis separately for all years and for releases on or after 1 January 2000. Apply the cutoff to each installment's release date. Keep the first row for each numeric movie ID and count the film once within each window. Films from 2000 onward are eligible for both windows. Agreement shows sensitivity to the cutoff, and differences can come from changed bundle membership as well as changed outcomes. Eight collections in the current cache cross the cutoff. A pooled window would discard Yaw's comparison. Applying the cutoff addresses the era concern directly, while release-period summaries give context for nominal gross. The candidate list's narrow coverage and mixed provenance limit generalization beyond this pool. [Brief](../lab_brief.md) · [Findings](02_findings.md)
 
 ### D06 · Rank by a fixed audience response measure
 
@@ -103,7 +103,7 @@ Apply the three-film and two-group minimum to each benchmarked outcome. Remove t
 
 ### D09 · Give relative deal priority and name the supporting metric
 
-The rankings workbook gives box-office context. The notebook analysis retains gross less production budget and that difference divided by budget where both inputs are positive. The memo gives The Godfather the first bundle quote across all years. Its middle score of 8.47 across three films is only 0.07 points above The Lord of the Rings, so the deal note gives little weight to that lead in pricing and prioritizes The Shawshank Redemption at comparable prices. If Finance uses 2000 onward, The Lord of the Rings becomes the first bundle call. An exact offer would require evidence about viewing outcomes, package costs, and licensing terms. [Client memo and deal note](client_memo.md) · [Recommendation notebook](../notebooks/04_recommendation.ipynb)
+The rankings workbook gives box-office context. The notebook analysis retains gross less production budget and that difference divided by budget where both inputs are positive. The memo gives The Godfather the first bundle quote across all years. Its middle score of 8.47 across three films is only 0.07 points above The Lord of the Rings, so the deal note gives little weight to that lead in pricing and prioritizes The Shawshank Redemption at comparable prices. If Finance uses 2000 onward, The Lord of the Rings becomes the first bundle call. An exact offer would require evidence about viewing outcomes, package costs, and licensing terms. [Client memo and deal note](01_client_memo.md) · [Recommendation notebook](../notebooks/04_recommendation.ipynb)
 
 ### D10 · Make quarterly reruns explainable
 
@@ -117,8 +117,8 @@ The run record fingerprints the source, cache, removal log, acquisition record, 
 
 The app runs the same pipeline as the command line. Adjoa can upload each quarter's CSV, read both release windows, and save all the reports together. Each upload gets its own temporary files and row removal log. The movie cache and lookup history stay available for later runs. A second copy of the analysis in the app could give Adjoa different answers from the command line. The local page uses the existing token setup and holds the ZIP only for the current browser session, so Adjoa downloads it to keep a record. [Run instructions](../README.md#upload-a-list-in-the-browser)
 
-The same app compares two saved report ZIPs. It checks that each workbook matches its run record, then matches candidates by ID in each window and compares the saved ranks. Re-running old lists against today's cache could change the evidence behind the original decision. The comparison shows what changed in the saved results. [Improvement beyond the brief](beyond_the_brief.md)
+The same app compares two saved report ZIPs. It checks that each workbook matches its run record, then matches candidates by ID in each window and compares the saved ranks. Re-running old lists against today's cache could change the evidence behind the original decision. The comparison shows what changed in the saved results. [Improvement beyond the brief](06_beyond_the_brief.md)
 
 ### D12 · Give Adjoa three reports for each rerun
 
-Show the recommendation, exclusions, and full rankings. Put both windows in the same Excel workbook so Adjoa can compare one candidate on one row. Include observed bundle titles and keep film issues in the exclusions report. The previous CSVs gave analysts easier access to some individual calculations, at the cost of more files to sort through. Analysts can still inspect the scoring, genre, and talent tables in Notebook 04. The app includes the run record for repeatability. Kwame's one-page memo carries the deal advice for this snapshot. [Pipeline outputs](../README.md#pipeline-outputs) · [Recommendation notebook](../notebooks/04_recommendation.ipynb) · [Client memo](client_memo.md)
+Show the recommendation, exclusions, and full rankings. Put both windows in the same Excel workbook so Adjoa can compare one candidate on one row. Include observed bundle titles and keep film issues in the exclusions report. The previous CSVs gave analysts easier access to some individual calculations, at the cost of more files to sort through. Analysts can still inspect the scoring, genre, and talent tables in Notebook 04. The app includes the run record for repeatability. Kwame's one-page memo carries the deal advice for this snapshot. [Pipeline outputs](../README.md#pipeline-outputs) · [Recommendation notebook](../notebooks/04_recommendation.ipynb) · [Client memo](01_client_memo.md)

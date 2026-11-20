@@ -19,15 +19,16 @@ WORKDIR /app
 COPY pyproject.toml README.md uv.lock .python-version ./
 
 # Install the locked dependencies, including the local upload app.
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --extra app --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project
 
 COPY src ./src
 COPY app.py config.toml id_list.csv ./
+COPY .streamlit/config.toml ./.streamlit/config.toml
 COPY notebooks ./notebooks
 COPY docs ./docs
 
 # An editable install lets the package find config.toml and use the mounted checkout.
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --extra app
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
 
 EXPOSE 8888
 CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]

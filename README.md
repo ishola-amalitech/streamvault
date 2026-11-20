@@ -2,7 +2,7 @@
 
 StreamVault is a lab about a fictional $14M film licensing decision. Run **`uv run streamvault`** to fetch missing data, validate it, and get the recommendation and reports for both release windows. The analysis compares all years with films released from 1 January 2000 onward. [Lab brief](lab_brief.md)
 
-The one-page memo summarizes the decision for Kwame, including the shortlist for each release window and the relative deal priority for the strongest bundle. [Client memo and deal note](docs/client_memo.md)
+The one-page memo summarizes the decision for Kwame, including the shortlist for each release window and the relative deal priority for the strongest bundle. [Client memo and deal note](docs/01_client_memo.md)
 
 ## The pipeline
 
@@ -62,7 +62,7 @@ uv run streamvault
 Use the upload page to run the same pipeline on a CSV with one column named `tmdb_id`. After the local uv setup above, run this from the repository root.
 
 ```sh
-uv run --locked --extra app streamlit run app.py --server.address 127.0.0.1
+uv run --locked streamlit run app.py --server.address 127.0.0.1
 ```
 
 If you use Docker, rebuild the image with `docker build -t streamvault .`, then run it as follows.
@@ -76,7 +76,9 @@ docker run --rm --user "$(id -u):$(id -g)" \
 
 Open `http://localhost:8501`, upload the CSV, then click **Run recommendation**. The page shows the results for both release windows. **Download reports** saves the recommendation, the rankings workbook, and the exclusions report in one ZIP. It also includes the original upload, the run record, and a row removal log when there are rows to log. Download the ZIP before closing the page or switching to another list.
 
-To compare two reviews, open **Compare saved runs** and upload the earlier and later report ZIPs. The app shows the recommendation in each window and which shortlist picks entered, left, or moved in rank. This uses the saved reports, so you can compare them without fetching movies or rerunning the analysis. [Improvement beyond the brief](docs/beyond_the_brief.md)
+Open **Output guide** in the app to see which file to read first, how to use the workbook, and what to keep for the next review.
+
+To compare two reviews, open **Compare saved runs** and upload the earlier and later report ZIPs. The app shows the recommendation in each window and which shortlist picks entered, left, or moved in rank. This uses the saved reports, so you can compare them without fetching movies or rerunning the analysis. [Improvement beyond the brief](docs/06_beyond_the_brief.md)
 
 The app reuses the local movie cache and saved lookup outcomes. New IDs need the same TMDB token as the command line. The app keeps the project candidate CSV and the CLI recommendation reports in place. It can update the shared movie cache and acquisition history in `out/`, so let an app run finish before starting a CLI run. The run record in the ZIP includes the acquisition counts and timing when this upload fetched data. [App entry point](app.py)
 
@@ -95,7 +97,7 @@ Notebook 04 writes its own copies of the recommendation reports using saved movi
 
 The workbook lists the observed titles behind each bundle's score for both windows. On the standalone tab, **Source gross** is the value we received and **Usable gross** is the amount that passed the data checks. Notebook 04 has the supporting tests for scoring, bundle strength, genres, and talent.
 
-Every ordinary run records its own analysis time in `run.json`. The separate runtime benchmark measures the analysis on 500 saved test titles and leaves out download time. The memory benchmark is optional and tests whether smaller field types reduce memory use. Use `--notebook` with the benchmark commands to refresh Notebook 04's copies. [Benchmark commands and results](docs/benchmarks.md#rerun-the-benchmarks)
+Every ordinary run records its own analysis time in `run.json`. The separate runtime benchmark measures the analysis on 500 saved test titles and leaves out download time. The memory benchmark is optional and tests whether smaller field types reduce memory use. Use `--notebook` with the benchmark commands to refresh Notebook 04's copies. [Benchmark commands and results](docs/05_benchmarks.md#rerun-the-benchmarks)
 
 The raw cache (`data/raw/movies.jsonl`) and removal log (`id_list_removals.csv`) are working files shared with the notebooks. A repeat run reuses saved entries. With a TMDB token, it retries uncached IDs. Without a token, it can replay a saved list when every uncached ID has a recorded outcome. Keep the candidate CSV, cache, removal log, and any acquisition record together to reproduce a snapshot. Git ignores these local records and the reports in `out/`.
 
@@ -146,4 +148,4 @@ docker run --rm -it --user "$(id -u):$(id -g)" \
   --publish 127.0.0.1:8888:8888 streamvault
 ```
 
-See the [findings](docs/findings.md), [questions](docs/questions.md), and [decision notes](docs/DECISIONS.md) for the evidence and choices behind the work.
+See the [findings](docs/02_findings.md), [questions](docs/03_questions.md), and [decision notes](docs/04_DECISIONS.md) for the evidence and choices behind the work.

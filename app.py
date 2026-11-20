@@ -153,14 +153,18 @@ def render_recommendation() -> None:
         summary, download = st.session_state.result
         st.download_button(
             "Download reports", download, file_name="streamvault-reports.zip",
-            mime="application/zip", on_click="ignore",
+            mime="application/zip", on_click="ignore", type="primary",
         )
         st.markdown(summary)
 
 
 def render_comparison() -> None:
-    earlier_file = st.file_uploader("Earlier reports ZIP", type="zip")
-    later_file = st.file_uploader("Later reports ZIP", type="zip")
+    st.caption("Upload the ZIP saved from each review to see what changed.")
+    earlier_column, later_column = st.columns(2)
+    with earlier_column:
+        earlier_file = st.file_uploader("Earlier reports ZIP", type="zip")
+    with later_column:
+        later_file = st.file_uploader("Later reports ZIP", type="zip")
     if earlier_file is None or later_file is None:
         return
     try:
@@ -190,13 +194,91 @@ def render_comparison() -> None:
         st.dataframe(changes, hide_index=True)
 
 
+def render_output_guide() -> None:
+    st.subheader("What’s in your download?")
+    st.html("""
+        <div class="sv-output-grid">
+            <article class="sv-output-card">
+                <h3>Recommendation</h3>
+                <code>recommendation.md</code>
+                <p>Start here for which deals to pursue first, the shortlists for both release windows,
+                and what the evidence can support.</p>
+            </article>
+            <article class="sv-output-card">
+                <h3>Rankings workbook</h3>
+                <code>rankings.xlsx</code>
+                <p>Use the Bundles and Standalones tabs to see how each option ranked across both windows.
+                Filter a result column to Shortlisted to see the picks.</p>
+            </article>
+            <article class="sv-output-card">
+                <h3>Exclusions report</h3>
+                <code>recommendation_exclusions.md</code>
+                <p>Check which entries were left out, why they were left out, and which films need review.</p>
+            </article>
+            <article class="sv-output-card">
+                <h3>Run record</h3>
+                <code>run.json</code>
+                <p>Keep this with the workbook. It records the inputs, settings, checks, and timing,
+                and the app uses it when you compare saved runs.</p>
+            </article>
+        </div>
+    """)
+    st.write("The ZIP also includes the CSV you uploaded and a row removal log when there are rows to log.")
+    st.info("Save the whole ZIP for your next review. You can upload it directly in Compare saved runs.")
+
+
 def render_page() -> None:
-    st.title("StreamVault recommendations")
-    recommendation, comparison = st.tabs(["Run recommendation", "Compare saved runs"])
+    st.set_page_config(page_title="StreamVault recommendations")
+    # Scope the styles to the page header and guide so Streamlit keeps its native controls.
+    st.html("""
+        <style>
+            .sv-header {
+                background: linear-gradient(120deg, #163044, #146659);
+                border-radius: 1.15rem;
+                padding: clamp(1.25rem, 5vw, 2.35rem);
+                margin-bottom: .75rem;
+            }
+            .sv-header h1 {
+                color: #fff;
+                font-size: clamp(1.8rem, 5vw, 2.9rem);
+                line-height: 1.05;
+                margin: 0 0 .65rem;
+                padding: 0;
+            }
+            .sv-header p { color: #e6f7f3; margin: 0; }
+            .sv-output-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+                gap: .85rem;
+            }
+            .sv-output-card {
+                background: #fff;
+                color: #162d38;
+                border: 1px solid #d5e2de;
+                border-top: 4px solid #087867;
+                border-radius: .75rem;
+                min-width: 0;
+                padding: 1rem;
+            }
+            .sv-output-card:nth-child(2) { border-top-color: #396ba9; }
+            .sv-output-card:nth-child(3) { border-top-color: #ab651d; }
+            .sv-output-card:nth-child(4) { border-top-color: #73509b; }
+            .sv-output-card h3 { color: inherit; font-size: 1.1rem; padding: 0; margin: 0 0 .35rem; }
+            .sv-output-card code { color: #234b50; background: #e8f2ef; overflow-wrap: anywhere; }
+            .sv-output-card p { color: inherit; margin: .6rem 0 0; }
+        </style>
+        <header class="sv-header">
+            <h1>StreamVault recommendations</h1>
+            <p>Run a candidate list, review the picks, or compare two saved reviews.</p>
+        </header>
+    """)
+    recommendation, comparison, outputs = st.tabs(["Run recommendation", "Compare saved runs", "Output guide"])
     with recommendation:
         render_recommendation()
     with comparison:
         render_comparison()
+    with outputs:
+        render_output_guide()
 
 
 if __name__ == "__main__":

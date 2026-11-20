@@ -2058,15 +2058,11 @@ dependencies = [
     { name = "httpx" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "openpyxl" },
     { name = "pandas" },
     { name = "scikit-learn" },
-    { name = "xlsxwriter" },
-]
-
-[package.optional-dependencies]
-app = [
-    { name = "openpyxl" },
     { name = "streamlit" },
+    { name = "xlsxwriter" },
 ]
 
 [package.dev-dependencies]
@@ -2081,13 +2077,12 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "matplotlib", specifier = ">=3.11.2" },
     { name = "numpy", specifier = ">=2.5.5" },
-    { name = "openpyxl", marker = "extra == 'app'", specifier = ">=3.1.5" },
+    { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=3.1.1" },
     { name = "scikit-learn", specifier = ">=1.9.1" },
-    { name = "streamlit", marker = "extra == 'app'", specifier = ">=1.67.0" },
+    { name = "streamlit", specifier = ">=1.67.0" },
     { name = "xlsxwriter", specifier = ">=3.3.2" },
 ]
-provides-extras = ["app"]
 
 [package.metadata.requires-dev]
 dev = [
