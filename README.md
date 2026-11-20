@@ -236,4 +236,6 @@ docker run --rm -it --user "$(id -u):$(id -g)" \
   --publish 127.0.0.1:8888:8888 streamvault
 ```
 
-See the [findings](docs/02_findings.md), [questions](docs/03_questions.md), and [decision notes](docs/04_DECISIONS.md) for the evidence and choices behind the work.
+See the [findings](docs/02_findings.md) for the data evidence, the [questions log](docs/03_questions.md#analysis-methods) for how the recommendation was made, and the [architecture decisions](docs/03-adr/) for how the pipeline, notebooks, and app fit together.
+
+For a new architecture decision, use the next numbered file and follow the existing ADR format. If a decision changes, record it in a new ADR that links to the one it replaces.
